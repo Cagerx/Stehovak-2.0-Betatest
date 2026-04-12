@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Worker": {
+      "title": "Worker",
+      "description": "Represents a worker or employee.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "photo": { "type": "string" },
+        "licenseInfo": { "type": "string" }
+      },
+      "required": ["id", "name", "phone", "role", "status"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Represents a vehicle in the fleet.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "plate": { "type": "string" },
+        "model": { "type": "string" },
+        "capacity": { "type": "string" },
+        "status": { "type": "string" },
+        "vin": { "type": "string" },
+        "stkExpiration": { "type": "string" },
+        "vignetteExpiration": { "type": "string" },
+        "insuranceInfo": { "type": "string" },
+        "carImage": { "type": "string" },
+        "techCertImage": { "type": "string" },
+        "tireSize": { "type": "string" },
+        "tireType": { "type": "string" },
+        "tireDepth": { "type": "string" }
+      },
+      "required": ["id", "plate", "model", "capacity", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Represents a financial transaction.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" }
+      },
+      "required": ["id", "type", "amount", "description", "date", "userId", "userName"]
+    },
+    "MoveTask": {
+      "title": "MoveTask",
+      "description": "Represents a moving task.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "customer": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "assignedWorkers": { "type": "array" },
+        "assignedVehicles": { "type": "array" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "title", "customer", "start", "end", "status"]
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "MoveTask" },
+      "description": "Collection of moving tasks."
+    },
+    "/workers/{workerId}": {
+      "schema": { "$ref": "Worker" },
+      "description": "Collection of workers."
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": { "$ref": "Vehicle" },
+      "description": "Collection of vehicles."
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "Transaction" },
+      "description": "Collection of financial transactions."
+    }
+  }
+}

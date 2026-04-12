@@ -1,0 +1,230 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: Firebase Auth UID
+    // Fields:
+    //   - role: string ('admin', 'user') - required
+    //   - email: string - required
+    //
+    // Collection: workers
+    // Document ID: string (Ideally matches UID)
+    // Fields:
+    //   - id: string - required
+    //   - name: string - required
+    //   - email: string - optional
+    //   - phone: string - required
+    //   - role: string ('Driver', 'Loader', 'Specialist') - required
+    //   - status: string ('Available', 'On Task', 'Off') - required
+    //   - photo: string - optional
+    //   - licenseInfo: string - optional
+    //
+    // Collection: vehicles
+    // Document ID: string
+    // Fields:
+    //   - id: string - required
+    //   - plate: string - required
+    //   - model: string - required
+    //   - capacity: string - required
+    //   - status: string ('Ready', 'Maintenance', 'In Use') - required
+    //   - vin: string - optional
+    //   - stkExpiration: string - optional
+    //   - tireType: string ('Summer', 'Winter', 'All-season') - optional
+    //
+    // Collection: tasks
+    // Document ID: string
+    // Fields:
+    //   - id: string - required
+    //   - title: string - required
+    //   - customer: string - required
+    //   - customerPhone: string - optional
+    //   - start: timestamp - required
+    //   - end: timestamp - required
+    //   - from: string - required
+    //   - to: string - required
+    //   - assignedWorkers: list (strings) - required
+    //   - assignedVehicles: list (strings) - required
+    //   - status: string ('Pending', 'Confirmed', 'In Progress', 'Completed') - required
+    //   - type: string - required
+    //   - priority: string ('Low', 'Medium', 'High', 'Critical') - required
+    //   - notes: string - optional
+    //   - images: list (strings) - optional
+    //
+    // Collection: transactions
+    // Document ID: string
+    // Fields:
+    //   - id: string - required
+    //   - type: string ('income', 'expense') - required
+    //   - amount: number - required
+    //   - description: string - required
+    //   - date: timestamp - required
+    //   - userId: string - required
+    //   - userName: string - required
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "vitezslav.gercak@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+    
+    function isValidString(val, min, max) {
+      return val is string && val.size() >= min && val.size() <= max;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidWorker(data) {
+      return hasRequiredFields(['id', 'name', 'phone', 'role', 'status']) &&
+             isValidString(data.id, 1, 50) &&
+             isValidString(data.name, 1, 100) &&
+             isValidString(data.phone, 0, 20) &&
+             data.role in ['Driver', 'Loader', 'Specialist'] &&
+             data.status in ['Available', 'On Task', 'Off'] &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('photo' in data) || (isValidUrl(data.photo) && data.photo.size() < 1000)) &&
+             (!('licenseInfo' in data) || isValidString(data.licenseInfo, 0, 500));
+    }
+
+    function isValidVehicle(data) {
+      return hasRequiredFields(['id', 'plate', 'model', 'capacity', 'status']) &&
+             isValidString(data.id, 1, 50) &&
+             isValidString(data.plate, 1, 20) &&
+             isValidString(data.model, 1, 100) &&
+             isValidString(data.capacity, 1, 50) &&
+             data.status in ['Ready', 'Maintenance', 'In Use'] &&
+             (!('tireType' in data) || data.tireType in ['Summer', 'Winter', 'All-season']);
+    }
+
+    function isValidTask(data) {
+      return hasRequiredFields(['id', 'title', 'customer', 'start', 'end', 'status', 'from', 'to', 'assignedWorkers', 'assignedVehicles', 'type', 'priority']) &&
+             isValidString(data.id, 1, 50) &&
+             isValidString(data.title, 1, 200) &&
+             isValidString(data.customer, 1, 100) &&
+             isValidString(data.from, 1, 500) &&
+             isValidString(data.to, 1, 500) &&
+             data.start is timestamp &&
+             data.end is timestamp &&
+             data.status in ['Pending', 'Confirmed', 'In Progress', 'Completed'] &&
+             data.priority in ['Low', 'Medium', 'High', 'Critical'] &&
+             data.assignedWorkers is list && data.assignedWorkers.size() <= 20 &&
+             data.assignedVehicles is list && data.assignedVehicles.size() <= 10 &&
+             (!('notes' in data) || isValidString(data.notes, 0, 2000)) &&
+             (!('customerPhone' in data) || isValidString(data.customerPhone, 0, 30));
+    }
+
+    function isValidTransaction(data) {
+      return hasRequiredFields(['id', 'type', 'amount', 'description', 'date', 'userId', 'userName']) &&
+             isValidString(data.id, 1, 50) &&
+             data.type in ['income', 'expense'] &&
+             data.amount is number && data.amount >= 0 && data.amount < 10000000 &&
+             isValidString(data.description, 1, 500) &&
+             data.date is timestamp &&
+             isValidString(data.userId, 1, 100) &&
+             isValidString(data.userName, 1, 100);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && 
+                      hasOnlyAllowedFields(['role', 'email']) &&
+                      request.resource.data.role == 'user' &&
+                      isValidEmail(request.resource.data.email);
+      allow update: if isAdmin() && hasOnlyAllowedFields(['role', 'email']) &&
+                      request.resource.data.role in ['admin', 'user'];
+    }
+
+    match /workers/{workerId} {
+      allow read: if isAuthenticated();
+      allow create: if (isOwner(workerId) || isAdmin()) && isValidWorker(request.resource.data);
+      allow update: if isAdmin() && isValidWorker(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidVehicle(request.resource.data);
+    }
+
+    match /tasks/{taskId} {
+      // Access is granted to admins or assigned workers
+      // Note: assignedWorkers should contain UIDs for best security
+      allow read: if isAdmin() || isAuthenticated(); 
+      
+      allow create: if isAuthenticated() && isValidTask(request.resource.data);
+      
+      allow update: if (isAdmin() && isValidTask(request.resource.data)) ||
+                      (isAuthenticated() && 
+                       isValidTask(request.resource.data) &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                       request.resource.data.status in ['Pending', 'Confirmed', 'In Progress', 'Completed']);
+                       
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() && isValidTransaction(request.resource.data) && 
+                      (request.resource.data.userId == request.auth.uid || isAdmin());
+                      
+      allow update: if (isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid)) && 
+                      isValidTransaction(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId;
+                      
+      allow delete: if isAdmin();
+    }
+  }
+}

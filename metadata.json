@@ -1,0 +1,9 @@
+{
+  "name": "Remix: Copy of Stěhovák 2.0",
+  "description": "Komplexní logistický nástroj pro stěhovací firmy s využitím AI pro plánování tras, odhad objemu a správu týmu.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
