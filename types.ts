@@ -51,6 +51,8 @@ export interface Transaction {
   type: 'income' | 'expense';
   amount: number;
   description: string;
+  category: string;
+  method: 'Cash' | 'Card' | 'Transfer';
   date: Date;
   userId: string;
   userName: string;

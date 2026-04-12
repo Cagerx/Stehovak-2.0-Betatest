@@ -47,11 +47,13 @@
         "type": { "type": "string" },
         "amount": { "type": "number" },
         "description": { "type": "string" },
+        "category": { "type": "string" },
+        "method": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
         "userId": { "type": "string" },
         "userName": { "type": "string" }
       },
-      "required": ["id", "type", "amount", "description", "date", "userId", "userName"]
+      "required": ["id", "type", "amount", "description", "category", "method", "date", "userId", "userName"]
     },
     "MoveTask": {
       "title": "MoveTask",

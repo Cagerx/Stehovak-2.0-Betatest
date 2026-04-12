@@ -17,7 +17,8 @@ import {
   Volume2, 
   StopCircle, 
   Zap,
-  BookOpen
+  BookOpen,
+  Trash
 } from 'lucide-react';
 
 export const COLORS = {
@@ -51,6 +52,7 @@ export const Icons = {
   Speaker: Volume2,
   StopCircle: StopCircle,
   Zap: Zap,
-  BookOpen: BookOpen
+  BookOpen: BookOpen,
+  Trash: Trash
 };
 

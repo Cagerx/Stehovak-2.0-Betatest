@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Icons, COLORS } from '../constants';
 import { Transaction, MoveTask, Worker, Vehicle } from '../types';
 import { db } from '../firebase';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, Timestamp, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../App';
 
 interface ProfileProps {
@@ -32,9 +32,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
 
   const handleAddTransaction = () => {
     setEditingTransaction({
-      type: 'income',
+      type: 'expense',
       amount: 0,
       description: '',
+      category: 'Ostatní',
+      method: 'Cash',
       date: new Date(),
       userId: user.id,
       userName: user.name
@@ -60,7 +62,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
       date: editingTransaction.date || new Date(),
       userId: editingTransaction.userId || user.id,
       userName: editingTransaction.userName || user.name,
-      amount: Number(editingTransaction.amount)
+      amount: Number(editingTransaction.amount),
+      category: editingTransaction.category || 'Ostatní',
+      method: editingTransaction.method || 'Cash'
     } as Transaction;
 
     if (isNaN(newTr.amount)) {
@@ -74,7 +78,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         date: Timestamp.fromDate(newTr.date)
       });
       
-      setSuccessMessage("Platba uložena");
+      setSuccessMessage(editingTransaction.id ? "Záznam upraven" : "Platba uložena");
       setTimeout(() => setSuccessMessage(null), 3000);
 
       setShowTransactionModal(false);
@@ -82,6 +86,20 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `transactions/${newTr.id}`);
       alert("Chyba při ukládání transakce.");
+    }
+  };
+
+  const deleteTransaction = async (id: string) => {
+    if (!confirm("Opravdu chcete tento záznam smazat?")) return;
+    try {
+      await deleteDoc(doc(db, 'transactions', id));
+      setSuccessMessage("Záznam smazán");
+      setTimeout(() => setSuccessMessage(null), 3000);
+      setShowTransactionModal(false);
+      setEditingTransaction(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
+      alert("Chyba při mazání.");
     }
   };
 
@@ -196,38 +214,67 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           </div>
         );
       case 'Přijaté platby a výdaje':
+        const totalIncome = userTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+        const totalExpense = userTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
         return (
-          <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-800/50 p-4 rounded-2xl border border-green-500/20">
+                <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Celkové příjmy</p>
+                <p className="text-green-500 font-black text-lg">{totalIncome.toLocaleString()} Kč</p>
+              </div>
+              <div className="bg-slate-800/50 p-4 rounded-2xl border border-red-500/20">
+                <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Celkové výdaje</p>
+                <p className="text-red-500 font-black text-lg">{totalExpense.toLocaleString()} Kč</p>
+              </div>
+            </div>
+
             <button 
               onClick={handleAddTransaction}
-              className="w-full bg-blue-600/20 text-blue-400 font-black py-3 rounded-2xl border border-blue-500/30 mb-2 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"
+              className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"
             >
-              <Icons.Plus /> Přidat položku
+              <Icons.Plus className="w-4 h-4" /> Nový záznam
             </button>
-            <div className="max-h-[300px] overflow-y-auto no-scrollbar space-y-2">
+
+            <div className="max-h-[400px] overflow-y-auto no-scrollbar space-y-3 pr-1">
               {userTransactions.length > 0 ? userTransactions.map(tr => (
                 <div 
                   key={tr.id} 
                   onClick={() => handleEditTransaction(tr)}
-                  className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex justify-between items-center group cursor-pointer hover:border-blue-500/50 transition-all"
+                  className="bg-slate-800 p-4 rounded-2xl border border-slate-700 flex justify-between items-center group cursor-pointer hover:border-blue-500/50 transition-all active:scale-[0.98]"
                 >
-                  <div className="flex-1 min-w-0 mr-4">
-                    <p className="text-white font-bold text-sm truncate">{tr.description}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-[9px] text-slate-500 font-black uppercase">{tr.type === 'income' ? 'Příjem' : 'Výdaj'}</p>
-                      {isAdmin && (
-                        <span className="text-[9px] bg-slate-900 px-2 py-0.5 rounded text-blue-400 border border-slate-700 font-black truncate max-w-[80px]">
-                          {tr.userName}
-                        </span>
-                      )}
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${tr.type === 'income' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                      {tr.category === 'Benzín' ? '⛽' : 
+                       tr.category === 'Parkovné' ? '🅿️' : 
+                       tr.category === 'Výplata' ? '💰' : 
+                       tr.category === 'Materiál' ? '📦' : 
+                       tr.category === 'Jídlo' ? '🍕' : '📝'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-sm truncate">{tr.description}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[9px] text-slate-500 font-black uppercase">{tr.category} • {tr.method}</p>
+                        {isAdmin && (
+                          <span className="text-[9px] bg-slate-900 px-2 py-0.5 rounded text-blue-400 border border-slate-700 font-black truncate max-w-[80px]">
+                            {tr.userName}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <span className={`font-black whitespace-nowrap ${tr.type === 'income' ? 'text-green-500' : 'text-red-500'}`}>
-                    {tr.type === 'income' ? '+' : '-'} {tr.amount.toLocaleString()} Kč
-                  </span>
+                  <div className="text-right ml-4">
+                    <p className={`font-black text-sm ${tr.type === 'income' ? 'text-green-500' : 'text-red-500'}`}>
+                      {tr.type === 'income' ? '+' : '-'} {tr.amount.toLocaleString()} Kč
+                    </p>
+                    <p className="text-[8px] text-slate-600 font-bold uppercase">{new Date(tr.date).toLocaleDateString('cs-CZ')}</p>
+                  </div>
                 </div>
               )) : (
-                <p className="text-slate-600 text-center py-4 text-xs font-bold uppercase">Žádné záznamy</p>
+                <div className="text-center py-12 bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
+                  <p className="text-slate-600 text-xs font-bold uppercase tracking-widest">Žádné finanční záznamy</p>
+                </div>
               )}
             </div>
           </div>
@@ -476,11 +523,22 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 100 }}
-              className="bg-slate-900 w-full max-w-sm rounded-[32px] p-8 border border-slate-800 shadow-2xl"
+              className="bg-slate-900 w-full max-w-sm rounded-[32px] p-8 border border-slate-800 shadow-2xl overflow-y-auto no-scrollbar max-h-[90vh]"
               onClick={e => e.stopPropagation()}
             >
-            <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-6">{editingTransaction.id ? 'Upravit záznam' : 'Nový záznam'}</h3>
-            <div className="space-y-4">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-white uppercase tracking-tighter">{editingTransaction.id ? 'Upravit záznam' : 'Nový záznam'}</h3>
+              {editingTransaction.id && (
+                <button 
+                  onClick={() => deleteTransaction(editingTransaction.id!)}
+                  className="p-2 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                >
+                  <Icons.Trash className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-5">
               <div className="flex bg-slate-800 p-1 rounded-2xl border border-slate-700">
                 <button 
                   onClick={() => setEditingTransaction({...editingTransaction, type: 'income'})}
@@ -502,34 +560,65 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
                   value={editingTransaction.description} 
                   onChange={e => setEditingTransaction({...editingTransaction, description: e.target.value})}
                   placeholder="např. Benzín IVECO"
-                  className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold"
+                  className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Částka (Kč)</label>
-                <input 
-                  type="number"
-                  step="any"
-                  value={editingTransaction.amount ?? ''} 
-                  onChange={e => setEditingTransaction({...editingTransaction, amount: e.target.value === '' ? undefined : Number(e.target.value)})}
-                  className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-black text-xl"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Kategorie</label>
+                  <select 
+                    value={editingTransaction.category} 
+                    onChange={e => setEditingTransaction({...editingTransaction, category: e.target.value})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none appearance-none"
+                  >
+                    <option value="Benzín">⛽ Benzín</option>
+                    <option value="Parkovné">🅿️ Parkovné</option>
+                    <option value="Výplata">💰 Výplata</option>
+                    <option value="Materiál">📦 Materiál</option>
+                    <option value="Jídlo">🍕 Jídlo</option>
+                    <option value="Ostatní">📝 Ostatní</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Metoda</label>
+                  <select 
+                    value={editingTransaction.method} 
+                    onChange={e => setEditingTransaction({...editingTransaction, method: e.target.value as any})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none appearance-none"
+                  >
+                    <option value="Cash">💵 Hotovost</option>
+                    <option value="Card">💳 Karta</option>
+                    <option value="Transfer">🏦 Převod</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Datum</label>
-                <input 
-                  type="date"
-                  value={editingTransaction.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : ''} 
-                  onChange={e => setEditingTransaction({...editingTransaction, date: new Date(e.target.value)})}
-                  className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Částka (Kč)</label>
+                  <input 
+                    type="number"
+                    step="any"
+                    value={editingTransaction.amount ?? ''} 
+                    onChange={e => setEditingTransaction({...editingTransaction, amount: e.target.value === '' ? undefined : Number(e.target.value)})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-black text-lg outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Datum</label>
+                  <input 
+                    type="date"
+                    value={editingTransaction.date ? new Date(editingTransaction.date).toISOString().split('T')[0] : ''} 
+                    onChange={e => setEditingTransaction({...editingTransaction, date: new Date(e.target.value)})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setShowTransactionModal(false)} className="flex-1 text-slate-500 font-black uppercase text-[10px] tracking-widest">Zrušit</button>
-                <button onClick={saveTransaction} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-[10px] tracking-widest">Uložit</button>
+                <button onClick={saveTransaction} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-[10px] tracking-widest active:scale-95 transition-all">Uložit</button>
               </div>
             </div>
           </motion.div>
