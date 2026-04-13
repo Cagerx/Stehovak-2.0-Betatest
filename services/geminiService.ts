@@ -5,7 +5,7 @@ import { ai } from "../firebase";
 // Striktní systémová instrukce pro vynucení češtiny
 const SYSTEM_INSTRUCTION = "Jsi expertní logistický asistent pro českou aplikaci 'Stěhovák 2.0'. TVŮJ JAZYK JE ČEŠTINA. \n\n1. Veškerá komunikace musí probíhat výhradně v češtině (Czech language only).\n2. Odpovídej věcně, profesionálně a s ohledem na české reálie.\n3. Používej metrický systém (metry, kilogramy) a českou měnu (Kč).\n4. Data formátuj jako DD.MM.RRRR.\n5. Pokud uživatel zadá dotaz v jiném jazyce, přelož si ho a odpověz česky.";
 
-const handleAIError = (error: any) => {
+const handleAIError = (error: any): string | null => {
   const errorMessage = (error.message || String(error)).toLowerCase();
   const isAbort = error.name === 'AbortError' || 
                   errorMessage.includes('aborted') || 
@@ -16,13 +16,11 @@ const handleAIError = (error: any) => {
   
   if (isAbort) {
     console.warn("AI request was aborted or cancelled.");
-    const abortErr = new Error("Požadavek byl přerušen.");
-    abortErr.name = 'AbortError';
-    throw abortErr;
+    return null; // Return null to indicate it was an abort
   }
   
   console.error("AI Service Error:", error);
-  throw error;
+  return "Služba AI je dočasně nedostupná. Zkuste to prosím později.";
 };
 
 export const geminiService = {
@@ -40,8 +38,8 @@ export const geminiService = {
       });
       return response.text || "Bez odpovědi.";
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "Chyba AI.";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   },
 
@@ -117,8 +115,8 @@ export const geminiService = {
       });
       return response.text || "";
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   },
 
@@ -183,8 +181,8 @@ export const geminiService = {
         return response.text || "Nebyla vygenerována žádná odpověď.";
       }
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "Chyba AI.";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   },
 
@@ -265,8 +263,8 @@ export const geminiService = {
       });
       return response.text || "Nepodařilo se analyzovat obrázek.";
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "Chyba analýzy.";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   },
 
@@ -356,8 +354,8 @@ export const geminiService = {
       });
       return response.text || "Nepodařilo se vygenerovat briefing.";
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "Chyba briefingu.";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   },
 
@@ -390,9 +388,9 @@ export const geminiService = {
         links: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
       };
     } catch (error: any) {
-      const handled = handleAIError(error);
+      const errorMsg = handleAIError(error);
       return {
-        text: typeof handled === 'string' ? handled : "Chyba map.",
+        text: errorMsg || "",
         links: []
       };
     }
@@ -413,8 +411,8 @@ export const geminiService = {
       });
       return response.text || "Příběh nebyl vygenerován.";
     } catch (error: any) {
-      const handled = handleAIError(error);
-      return typeof handled === 'string' ? handled : "Chyba při generování příběhu.";
+      const errorMsg = handleAIError(error);
+      return errorMsg || "";
     }
   }
 };

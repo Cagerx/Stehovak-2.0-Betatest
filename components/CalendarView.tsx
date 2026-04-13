@@ -4,8 +4,9 @@ import { MoveTask, Worker, Vehicle } from '../types';
 import { Icons, COLORS } from '../constants';
 import { geminiService } from '../services/geminiService';
 import { db } from '../firebase';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, Timestamp, addDoc, collection, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../App';
+import { googleService } from '../services/googleService';
 
 interface CalendarViewProps {
   tasks: MoveTask[];
@@ -13,11 +14,12 @@ interface CalendarViewProps {
   workers: Worker[];
   vehicles: Vehicle[];
   user: { role: 'admin' | 'user' };
+  googleAccessToken: string | null;
 }
 
 type ViewMode = 'day' | 'week' | 'list';
 
-const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, vehicles, user }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, vehicles, user, googleAccessToken }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
@@ -146,6 +148,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
         end: Timestamp.fromDate(taskData.end)
       });
       
+      // --- GOOGLE CALENDAR SYNC ---
+      const syncEnabled = localStorage.getItem('google_sync_enabled') === 'true';
+      if (googleAccessToken && syncEnabled) {
+        try {
+          await googleService.createCalendarEvent(googleAccessToken, {
+            summary: `Stěhování: ${taskData.title}`,
+            description: `Zákazník: ${taskData.customer}\nZ: ${taskData.from}\nDo: ${taskData.to}\nPoznámky: ${taskData.notes || ''}`,
+            start: taskData.start.toISOString(),
+            end: taskData.end.toISOString()
+          });
+          console.log("Event synced to Google Calendar");
+        } catch (err) {
+          const isAbort = (err as any)?.name === 'AbortError' || (err as any)?.message?.toLowerCase().includes('aborted');
+          if (!isAbort) console.error("Failed to sync to Google Calendar:", err);
+        }
+      }
+      
       if (!isEditing) {
         // --- AUTOMATICKÁ NOTIFIKACE (SMS - HROMADNÁ) ---
         // Pokud je to nová zakázka, pošli SMS všem přiřazeným pracovníkům
@@ -180,7 +199,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       }
       setShowModal(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskData.id}`);
+      const handled = handleFirestoreError(error, OperationType.WRITE, `tasks/${taskData.id}`);
+      if (!handled) console.error("Failed to save task:", error);
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    if (!window.confirm("Opravdu chcete tuto zakázku smazat?")) return;
+    try {
+      await deleteDoc(doc(db, 'tasks', id));
+      setShowModal(false);
+    } catch (error) {
+      const handled = handleFirestoreError(error, OperationType.DELETE, `tasks/${id}`);
+      if (!handled) console.error("Failed to delete task:", error);
     }
   };
 
@@ -331,6 +362,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                    <div>
                      <h4 className="text-xs md:text-lg font-black leading-none truncate">{task.title}</h4>
                      <p className="text-[9px] md:text-sm font-bold opacity-70 uppercase mt-1 truncate">{task.customer}</p>
+                     
+                     <div className="mt-2 space-y-1 hidden md:block">
+                       {task.assignedWorkers.length > 0 && (
+                         <div className="flex items-center gap-1.5 text-[10px] font-black uppercase opacity-80">
+                           <Icons.User className="w-3 h-3" />
+                           <span className="truncate">{task.assignedWorkers.map(id => workers.find(w => w.id === id)?.name).filter(Boolean).join(', ')}</span>
+                         </div>
+                       )}
+                       {task.assignedVehicles.length > 0 && (
+                         <div className="flex items-center gap-1.5 text-[10px] font-black uppercase opacity-80">
+                           <Icons.Truck className="w-3 h-3" />
+                           <span className="truncate">{task.assignedVehicles.map(id => vehicles.find(v => v.id === id)?.model).filter(Boolean).join(', ')}</span>
+                         </div>
+                       )}
+                     </div>
                    </div>
                    <p className="text-[8px] md:text-xs font-black uppercase text-right opacity-60">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</p>
                  </div>
@@ -375,6 +421,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                       <div>
                         <p className="text-xs md:text-base font-bold text-slate-200 group-hover:text-blue-400 transition-colors">{task.title}</p>
                         <p className="text-[9px] md:text-xs text-white/50 font-black uppercase">{task.customer}</p>
+                        
+                        <div className="mt-1 flex flex-wrap gap-2 opacity-60">
+                          {task.assignedWorkers.length > 0 && (
+                            <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase">
+                              <Icons.User className="w-2 h-2 md:w-3 md:h-3" />
+                              <span>{task.assignedWorkers.map(id => workers.find(w => w.id === id)?.name.split(' ')[0]).filter(Boolean).join(', ')}</span>
+                            </div>
+                          )}
+                          {task.assignedVehicles.length > 0 && (
+                            <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase">
+                              <Icons.Truck className="w-2 h-2 md:w-3 md:h-3" />
+                              <span>{task.assignedVehicles.map(id => vehicles.find(v => v.id === id)?.model).filter(Boolean).join(', ')}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <span className="text-[10px] md:text-sm font-black text-white/30">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</span>
@@ -827,6 +888,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
 
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setShowModal(false)} className="flex-1 text-slate-500 font-black uppercase text-xs tracking-widest">Zrušit</button>
+                {isEditing && user.role === 'admin' && (
+                  <button 
+                    onClick={() => deleteTask(currentTask.id!)} 
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                  >
+                    <Icons.Trash className="w-5 h-5" />
+                  </button>
+                )}
                 <button onClick={saveTask} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-xs tracking-widest">Uložit změny</button>
               </div>
             </div>

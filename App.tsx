@@ -11,7 +11,7 @@ import Profile from './components/Profile';
 import ErrorBoundary from './components/ErrorBoundary';
 import { db, auth, googleProvider, testDatabaseConnection } from './firebase';
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import { signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { signInWithPopup, onAuthStateChanged, signOut, GoogleAuthProvider } from 'firebase/auth';
 
 // Error handling
 export enum OperationType {
@@ -30,8 +30,24 @@ interface FirestoreErrorInfo {
   authInfo: any;
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): boolean {
   const errorMessage = error instanceof Error ? error.message : String(error);
+  const isAbort = errorMessage.toLowerCase().includes('aborted') || 
+                  errorMessage.toLowerCase().includes('cancel') ||
+                  errorMessage.toLowerCase().includes('the user aborted a request') ||
+                  errorMessage.toLowerCase().includes('signal is aborted') ||
+                  (error as any)?.name === 'AbortError';
+
+  if (isAbort) return true; // Silent return for aborted requests
+
+  if (errorMessage.toLowerCase().includes('quota exceeded')) {
+    window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+    // We don't log to console.error for quota exceeded to keep logs clean
+    // since we show a prominent banner in the UI.
+    console.warn('Firestore Quota Exceeded. Banner displayed to user.');
+    return true;
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: errorMessage,
     authInfo: {
@@ -48,6 +64,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   if (errorMessage.toLowerCase().includes('permission') || errorMessage.toLowerCase().includes('missing or insufficient')) {
     throw new Error(JSON.stringify(errInfo));
   }
+  return false;
 }
 
 interface AppUser {
@@ -94,6 +111,8 @@ const App: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tasks, setTasks] = useState<MoveTask[]>([]);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(localStorage.getItem('google_access_token'));
   const [isAutoRegistering, setIsAutoRegistering] = useState(false);
   const registrationInProgress = React.useRef(false);
 
@@ -101,67 +120,95 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const email = firebaseUser.email || '';
-        let matchingWorker = workers.find(w => w.email?.toLowerCase() === email.toLowerCase());
         
-        // Auto-registration logic
-        if (!matchingWorker && !registrationInProgress.current && workers.length > 0) {
-          registrationInProgress.current = true;
-          setIsAutoRegistering(true);
-          try {
-            const newWorkerId = firebaseUser.uid;
-            const workerRef = doc(db, 'workers', newWorkerId);
-            const workerSnap = await getDoc(workerRef);
-            
-            if (!workerSnap.exists()) {
-              const newWorker: any = {
-                id: newWorkerId,
-                name: firebaseUser.displayName || 'Nový člen týmu',
-                email: email || '',
-                phone: '', // Allowed by rules now
-                role: 'Loader',
-                status: 'Available'
-              };
-              if (firebaseUser.photoURL) {
-                newWorker.photo = firebaseUser.photoURL;
-              }
-              
-              await setDoc(workerRef, newWorker);
-            }
-          } catch (error) {
-            console.error("Auto-registration failed:", error);
-          } finally {
-            setIsAutoRegistering(false);
-            registrationInProgress.current = false;
-          }
-          return;
-        }
-
-        const isAdmin = (matchingWorker?.id === '1' || email === 'admin@stehovak2.com' || email === 'vitezslav.gercak@gmail.com');
-        const approved = isAdmin || !!matchingWorker;
-        
-        setIsApproved(approved);
-
-        if (approved) {
-          setUser({
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || matchingWorker?.name || 'Uživatel Stěhovák',
-            email: email,
-            avatar: firebaseUser.photoURL || 'https://picsum.photos/seed/user/200/200',
-            role: isAdmin ? 'admin' : 'user',
-            workerId: matchingWorker?.id
-          });
-        } else {
-          setUser(null);
-        }
+        // We'll handle the worker matching and auto-registration in a separate effect
+        // to keep this listener stable.
+        setIsAuthReady(true);
       } else {
         setUser(null);
         setIsApproved(null);
+        setActiveTab(AppTab.DASHBOARD); // Reset tab to main page on logout
+        setIsAuthReady(true);
       }
-      setIsAuthReady(true);
     });
 
     return () => unsubscribe();
-  }, [workers, isAutoRegistering]);
+  }, []);
+
+  // Separate effect for user profile and registration logic
+  useEffect(() => {
+    if (!isAuthReady || !auth.currentUser) return;
+
+    const firebaseUser = auth.currentUser;
+    const email = firebaseUser.email || '';
+    const matchingWorker = workers.find(w => w.email?.toLowerCase() === email.toLowerCase());
+
+    const processUser = async () => {
+      const adminEmails = ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com'];
+      const allowedUserEmails = ['kubienalubo@gmail.com', 'zdenekondo444@gmail.com'];
+      const isWhitelisted = adminEmails.includes(email.toLowerCase()) || allowedUserEmails.includes(email.toLowerCase());
+
+      // Auto-registration logic - only for whitelisted emails
+      if (!matchingWorker && !registrationInProgress.current && isAuthReady && isWhitelisted) {
+        registrationInProgress.current = true;
+        setIsAutoRegistering(true);
+        try {
+          const newWorkerId = firebaseUser.uid;
+          const workerRef = doc(db, 'workers', newWorkerId);
+          const workerSnap = await getDoc(workerRef);
+          
+          if (!workerSnap.exists()) {
+            const newWorker: any = {
+              id: newWorkerId,
+              name: firebaseUser.displayName || 'Nový člen týmu',
+              email: email || '',
+              phone: '',
+              role: 'Loader',
+              status: 'Available'
+            };
+            if (firebaseUser.photoURL) {
+              newWorker.photo = firebaseUser.photoURL;
+            }
+            
+            await setDoc(workerRef, newWorker);
+          }
+        } catch (error) {
+          const handled = handleFirestoreError(error, OperationType.WRITE, `workers/${firebaseUser.uid}`);
+          if (!handled) console.error("Auto-registration failed:", error);
+        } finally {
+          setIsAutoRegistering(false);
+          registrationInProgress.current = false;
+        }
+        return;
+      }
+
+      const isAdmin = adminEmails.includes(email.toLowerCase()) || matchingWorker?.id === '1';
+      const approved = isAdmin || allowedUserEmails.includes(email.toLowerCase()) || !!matchingWorker;
+      
+      setIsApproved(approved);
+
+      if (approved) {
+        // Only update if data actually changed to prevent unnecessary re-renders of dependent effects
+        const newUser: AppUser = {
+          id: firebaseUser.uid,
+          name: firebaseUser.displayName || matchingWorker?.name || 'Uživatel Stěhovák',
+          email: email,
+          avatar: firebaseUser.photoURL || 'https://picsum.photos/seed/user/200/200',
+          role: isAdmin ? 'admin' : 'user',
+          workerId: matchingWorker?.id
+        };
+
+        setUser(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(newUser)) return prev;
+          return newUser;
+        });
+      } else {
+        setUser(null);
+      }
+    };
+
+    processUser();
+  }, [workers, isAuthReady, isAutoRegistering]);
 
   useEffect(() => {
     // Only run connection test once and handle error silently if it's just a permission issue on mount
@@ -188,11 +235,15 @@ const App: React.FC = () => {
     };
     // Use a timeout to ensure aistudio is loaded
     setTimeout(checkKey, 500);
+
+    const handleQuota = () => setQuotaExceeded(true);
+    window.addEventListener('firestore-quota-exceeded', handleQuota);
+    return () => window.removeEventListener('firestore-quota-exceeded', handleQuota);
   }, []);
 
   // Firestore Listeners
   useEffect(() => {
-    if (!user || !isAuthReady) return; // Only listen if authenticated and auth is ready
+    if (!user?.id || !isAuthReady) return; // Only listen if authenticated and auth is ready
 
     const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
       const tasksData = snapshot.docs.map(doc => {
@@ -235,7 +286,7 @@ const App: React.FC = () => {
       unsubVehicles();
       unsubTransactions();
     };
-  }, [user]);
+  }, [user?.id, isAuthReady]);
 
   const handleSelectApiKey = async () => {
       // @ts-ignore
@@ -259,13 +310,23 @@ const App: React.FC = () => {
   const handleGoogleLogin = async () => {
     try {
       setAuthError(null);
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential?.accessToken;
+      if (token) {
+        setGoogleAccessToken(token);
+        localStorage.setItem('google_access_token', token);
+      }
+      // Hard refresh to ensure clean state and immediate redirection to main app
+      window.location.reload();
     } catch (error: any) {
       const errorMessage = (error.message || String(error)).toLowerCase();
       const isAbort = error.code === 'auth/popup-closed-by-user' || 
                       error.code === 'auth/cancelled-popup-request' ||
                       errorMessage.includes('aborted') ||
-                      errorMessage.includes('cancel');
+                      errorMessage.includes('cancel') ||
+                      errorMessage.includes('the user aborted a request') ||
+                      errorMessage.includes('signal is aborted');
 
       if (isAbort) {
         // User closed the popup or request was cancelled, no need to show a scary error
@@ -280,20 +341,10 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setActiveTab(AppTab.DASHBOARD); // Ensure we land on dashboard next time
     } catch (error) {
       console.error("Logout error:", error);
     }
-  };
-
-  const handleManualLogin = () => {
-    setUser({
-      id: '1',
-      name: 'Jan Novák (Demo)',
-      email: 'admin@stehovak2.com',
-      avatar: 'https://picsum.photos/seed/admin/200/200',
-      role: 'admin',
-      workerId: '1'
-    });
   };
 
   const getTabLabel = (tab: AppTab) => {
@@ -302,7 +353,7 @@ const App: React.FC = () => {
       case AppTab.CALENDAR: return 'KALENDÁŘ';
       case AppTab.FLEET: return 'FLOTILA';
       case AppTab.AI_LAB: return 'AI LABORATOŘ';
-      case AppTab.PROFILE: return 'PROFIL';
+      case AppTab.PROFILE: return 'VÍCE';
       default: return '';
     }
   };
@@ -419,12 +470,6 @@ const App: React.FC = () => {
                 </svg>
                 Přihlásit se přes Google
             </button>
-            <button 
-                onClick={handleManualLogin}
-                className="w-full bg-slate-800 text-white font-black py-3 rounded-xl border border-slate-700 hover:bg-slate-700 transition-all text-xs uppercase tracking-widest shadow-lg active:scale-95"
-            >
-                Vstoupit v Demo Režimu
-            </button>
           </div>
 
           {/* Dynamic URL Warning - Educational Block */}
@@ -465,6 +510,12 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <div className="min-h-screen bg-[#0f172a] flex flex-col w-full md:max-w-[1920px] mx-auto shadow-2xl overflow-hidden relative border-x border-white/10">
       <header className="bg-slate-900/90 backdrop-blur-xl border-b border-white/10 p-5 md:p-8 sticky top-0 z-40 flex items-center justify-between h-[80px] md:h-[100px]">
+        {quotaExceeded && (
+          <div className="absolute top-0 left-0 right-0 bg-red-600 text-white text-[10px] font-black py-2 text-center animate-pulse z-50 shadow-lg flex items-center justify-center gap-2">
+            <Icons.AlertTriangle className="w-3 h-3" />
+            DENNÍ LIMIT DAT VYČERPÁN (QUOTA EXCEEDED). APLIKACE BUDE OPĚT PLNĚ FUNKČNÍ ZÍTRA.
+          </div>
+        )}
         <div className="flex items-center gap-3 md:gap-5">
           <div className="w-14 h-14 md:w-16 md:h-16 flex items-center justify-center transition-transform hover:scale-110">
             <img 
@@ -512,8 +563,8 @@ const App: React.FC = () => {
             transition={{ duration: 0.2 }}
           >
             {activeTab === AppTab.DASHBOARD && <Dashboard tasks={tasks} workers={workers} vehicles={vehicles} user={user} />}
-            {activeTab === AppTab.CALENDAR && <CalendarView tasks={tasks} setTasks={setTasks} workers={workers} vehicles={vehicles} user={user} />}
-            {activeTab === AppTab.FLEET && <FleetView workers={workers} setWorkers={setWorkers} vehicles={vehicles} setVehicles={setVehicles} />}
+            {activeTab === AppTab.CALENDAR && <CalendarView tasks={tasks} setTasks={setTasks} workers={workers} vehicles={vehicles} user={user} googleAccessToken={googleAccessToken} />}
+            {activeTab === AppTab.FLEET && <FleetView workers={workers} setWorkers={setWorkers} vehicles={vehicles} setVehicles={setVehicles} user={user} />}
             {activeTab === AppTab.AI_LAB && <AILab user={user} />}
             {activeTab === AppTab.PROFILE && (
               <Profile 
@@ -524,6 +575,7 @@ const App: React.FC = () => {
                 tasks={tasks}
                 workers={workers}
                 vehicles={vehicles}
+                googleAccessToken={googleAccessToken}
               />
             )}
           </motion.div>
@@ -535,7 +587,7 @@ const App: React.FC = () => {
         <NavButton active={activeTab === AppTab.CALENDAR} onClick={() => setActiveTab(AppTab.CALENDAR)} icon={<Icons.Calendar />} label="Kalendář" />
         <NavButton active={activeTab === AppTab.FLEET} onClick={() => setActiveTab(AppTab.FLEET)} icon={<Icons.Truck />} label="Flotila" />
         <NavButton active={activeTab === AppTab.AI_LAB} onClick={() => setActiveTab(AppTab.AI_LAB)} icon={<Icons.Sparkles />} label="AI Lab" />
-        <NavButton active={activeTab === AppTab.PROFILE} onClick={() => setActiveTab(AppTab.PROFILE)} icon={<Icons.User />} label="Profil" />
+        <NavButton active={activeTab === AppTab.PROFILE} onClick={() => setActiveTab(AppTab.PROFILE)} icon={<Icons.User />} label="Více" />
       </nav>
     </div>
   </ErrorBoundary>

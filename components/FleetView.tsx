@@ -3,7 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Worker, Vehicle } from '../types';
 import { Icons } from '../constants';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../App';
 
 interface FleetViewProps {
@@ -11,9 +11,10 @@ interface FleetViewProps {
   setWorkers: React.Dispatch<React.SetStateAction<Worker[]>>;
   vehicles: Vehicle[];
   setVehicles: React.Dispatch<React.SetStateAction<Vehicle[]>>;
+  user: any;
 }
 
-const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, setVehicles }) => {
+const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, setVehicles, user }) => {
   const [activeSubTab, setActiveSubTab] = useState<'workers' | 'vehicles'>('workers');
   
   // Modal states
@@ -65,8 +66,25 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
       await setDoc(doc(db, 'workers', workerData.id), workerData);
       setShowWorkerModal(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `workers/${workerData.id}`);
-      alert("Chyba při ukládání pracovníka.");
+      const handled = handleFirestoreError(error, OperationType.WRITE, `workers/${workerData.id}`);
+      if (!handled) {
+        console.error("Worker save error:", error);
+        alert("Chyba při ukládání pracovníka.");
+      }
+    }
+  };
+
+  const deleteWorker = async (id: string) => {
+    if (!window.confirm("Opravdu chcete tohoto pracovníka smazat?")) return;
+    try {
+      await deleteDoc(doc(db, 'workers', id));
+      setShowWorkerModal(false);
+    } catch (error) {
+      const handled = handleFirestoreError(error, OperationType.DELETE, `workers/${id}`);
+      if (!handled) {
+        console.error("Worker delete error:", error);
+        alert("Chyba při mazání pracovníka.");
+      }
     }
   };
 
@@ -81,8 +99,25 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
       await setDoc(doc(db, 'vehicles', vehicleData.id), vehicleData);
       setShowVehicleModal(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `vehicles/${vehicleData.id}`);
-      alert("Chyba při ukládání vozidla.");
+      const handled = handleFirestoreError(error, OperationType.WRITE, `vehicles/${vehicleData.id}`);
+      if (!handled) {
+        console.error("Vehicle save error:", error);
+        alert("Chyba při ukládání vozidla.");
+      }
+    }
+  };
+
+  const deleteVehicle = async (id: string) => {
+    if (!window.confirm("Opravdu chcete toto vozidlo smazat?")) return;
+    try {
+      await deleteDoc(doc(db, 'vehicles', id));
+      setShowVehicleModal(false);
+    } catch (error) {
+      const handled = handleFirestoreError(error, OperationType.DELETE, `vehicles/${id}`);
+      if (!handled) {
+        console.error("Vehicle delete error:", error);
+        alert("Chyba při mazání vozidla.");
+      }
     }
   };
 
@@ -128,8 +163,8 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                 {v.carImage ? <img src={v.carImage} className="w-full h-full object-cover" /> : <Icons.Truck />}
               </div>
               <div className="flex-1">
-                <h4 className="font-bold text-slate-100 group-hover:text-blue-400">{v.plate}</h4>
-                <p className="text-[10px] text-white/50 font-bold uppercase">{v.model}</p>
+                <h4 className="font-bold text-slate-100 group-hover:text-blue-400">{v.model}</h4>
+                <p className="text-[10px] text-white/50 font-bold uppercase">{v.plate}</p>
               </div>
               <span className={`text-[9px] px-2 py-1 rounded font-black uppercase ${v.status === 'Ready' ? 'bg-blue-900/30 text-blue-400' : 'bg-red-900/30 text-red-400'}`}>{getStatusLabel(v.status)}</span>
             </div>
@@ -175,7 +210,17 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                 <label className="text-[10px] font-black text-slate-500 uppercase px-1">Email</label>
                 <input value={selectedWorker.email} onChange={e => setSelectedWorker({...selectedWorker, email: e.target.value})} className="w-full bg-slate-800 rounded-xl p-3 text-white border-none" />
               </div>
-              <button onClick={saveWorker} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 mt-4">Uložit Profil</button>
+              <div className="flex gap-4 mt-4">
+                {selectedWorker.id && user.role === 'admin' && (
+                  <button 
+                    onClick={() => deleteWorker(selectedWorker.id!)} 
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                  >
+                    <Icons.Trash className="w-5 h-5" />
+                  </button>
+                )}
+                <button onClick={saveWorker} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20">Uložit Profil</button>
+              </div>
               <button onClick={() => setShowWorkerModal(false)} className="w-full text-slate-500 font-bold py-2">Zavřít</button>
             </div>
           </div>
@@ -264,7 +309,17 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
               </div>
               <input type="file" ref={carImageRef} hidden onChange={e => handleImage(e, 'car')} />
               <input type="file" ref={techCertImageRef} hidden onChange={e => handleImage(e, 'tech')} />
-              <button onClick={saveVehicle} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 mt-4">Uložit Vozidlo</button>
+              <div className="flex gap-4 mt-4">
+                {selectedVehicle.id && user.role === 'admin' && (
+                  <button 
+                    onClick={() => deleteVehicle(selectedVehicle.id!)} 
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                  >
+                    <Icons.Trash className="w-5 h-5" />
+                  </button>
+                )}
+                <button onClick={saveVehicle} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20">Uložit Vozidlo</button>
+              </div>
               <button onClick={() => setShowVehicleModal(false)} className="w-full text-slate-500 font-bold py-2">Zavřít</button>
             </div>
           </div>

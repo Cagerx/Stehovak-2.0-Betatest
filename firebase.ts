@@ -11,6 +11,8 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth();
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/calendar.events');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.modify');
 
 // Initialize the Gemini API using the recommended @google/genai SDK
 // This instance is optimized for this environment and uses the provided API key
@@ -28,7 +30,9 @@ export async function testDatabaseConnection() {
     const errorMessage = (error.message || String(error)).toLowerCase();
     const isAbort = error.name === 'AbortError' || 
                     errorMessage.includes('aborted') || 
-                    errorMessage.includes('cancel');
+                    errorMessage.includes('cancel') ||
+                    errorMessage.includes('the user aborted a request') ||
+                    errorMessage.includes('signal is aborted');
     
     if (isAbort) return false;
 
@@ -36,6 +40,9 @@ export async function testDatabaseConnection() {
       console.warn("Firestore connection test: Missing permissions (this is expected if not logged in or rules are strict).");
     } else if (errorMessage.includes('offline')) {
       console.error("Firestore connection failed: the client is offline");
+    } else if (errorMessage.includes('quota exceeded')) {
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+      console.warn("Firestore Quota Exceeded detected in connection test.");
     } else {
       console.error("Firestore connection test error:", error);
     }

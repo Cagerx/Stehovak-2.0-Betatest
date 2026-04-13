@@ -87,7 +87,7 @@ service cloud.firestore {
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "vitezslav.gercak@gmail.com" && request.auth.token.email_verified == true)
+          ((request.auth.token.email == "vitezslav.gercak@gmail.com" || request.auth.token.email == "stehovanimatej@gmail.com") && request.auth.token.email_verified == true)
         );
     }
 

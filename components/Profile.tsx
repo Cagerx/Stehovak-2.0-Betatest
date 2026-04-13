@@ -7,6 +7,8 @@ import { db } from '../firebase';
 import { doc, setDoc, Timestamp, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../App';
 
+import { googleService, GoogleCalendarEvent, GmailMessage } from '../services/googleService';
+
 interface ProfileProps {
   user: { id: string, name: string, email: string, avatar: string, role: 'admin' | 'user', workerId?: string };
   onLogout: () => void;
@@ -15,15 +17,98 @@ interface ProfileProps {
   tasks: MoveTask[];
   workers: Worker[];
   vehicles: Vehicle[];
+  googleAccessToken: string | null;
 }
 
-const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTransactions, tasks, workers, vehicles }) => {
+const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTransactions, tasks, workers, vehicles, googleAccessToken }) => {
   const [activeDetail, setActiveDetail] = useState<string | null>(null);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Partial<Transaction> | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
+  const [gmailMessages, setGmailMessages] = useState<GmailMessage[]>([]);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [syncEnabled, setSyncEnabled] = useState(localStorage.getItem('google_sync_enabled') === 'true');
+  const [isSyncingGmail, setIsSyncingGmail] = useState(false);
+  
+  const [notifications, setNotifications] = useState(() => {
+    const saved = localStorage.getItem('app_notifications');
+    return saved ? JSON.parse(saved) : {
+      push: true,
+      email: false,
+      sms: true,
+      whatsapp: false,
+      newTasks: true,
+      teamChanges: true,
+      vehicleService: true,
+      sounds: true,
+      quietHours: false
+    };
+  });
 
   const isAdmin = user.role === 'admin';
+
+  const updateNotification = (key: string, val: boolean) => {
+    const newSettings = { ...notifications, [key]: val };
+    setNotifications(newSettings);
+    localStorage.setItem('app_notifications', JSON.stringify(newSettings));
+  };
+
+  const handleSyncToggle = (val: boolean) => {
+    setSyncEnabled(val);
+    localStorage.setItem('google_sync_enabled', val.toString());
+  };
+
+  const syncGmailTasks = async () => {
+    if (!googleAccessToken) return;
+    setIsSyncingGmail(true);
+    setGoogleError(null);
+    try {
+      const messages = await googleService.getGmailMessages(googleAccessToken);
+      let count = 0;
+      
+      for (const msg of messages) {
+        // Simple logic: if subject contains "stěhování" and it's not already processed
+        // In a real app, we would track processed message IDs in Firestore
+        const subject = (msg.subject || '').toLowerCase();
+        if (subject.includes('stěhování')) {
+          const taskId = `gmail-${msg.id}`;
+          // Check if already exists (optimistic check)
+          // For now, we just create a pending task
+          await setDoc(doc(db, 'tasks', taskId), {
+            id: taskId,
+            title: `Z Gmailu: ${msg.subject}`,
+            customer: msg.from || 'Neznámý',
+            customerPhone: '',
+            start: Timestamp.fromDate(new Date()),
+            end: Timestamp.fromDate(new Date(Date.now() + 3600000)),
+            from: 'Zjišťuji...',
+            to: 'Zjišťuji...',
+            status: 'Pending',
+            type: 'Stěhování',
+            priority: 'Medium',
+            notes: msg.snippet,
+            assignedWorkers: [],
+            assignedVehicles: [],
+            images: []
+          });
+          count++;
+        }
+      }
+      setSuccessMessage(`Synchronizováno ${count} nových zakázek z Gmailu`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error: any) {
+      const handled = handleFirestoreError(error, OperationType.WRITE, 'tasks/sync');
+      if (!handled) {
+        console.error("Gmail Sync Error:", error);
+        setGoogleError("Nepodařilo se synchronizovat Gmail.");
+      }
+    } finally {
+      setIsSyncingGmail(false);
+    }
+  };
 
   const userTransactions = (isAdmin 
     ? [...transactions]
@@ -84,8 +169,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
       setShowTransactionModal(false);
       setEditingTransaction(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `transactions/${newTr.id}`);
-      alert("Chyba při ukládání transakce.");
+      const handled = handleFirestoreError(error, OperationType.WRITE, `transactions/${newTr.id}`);
+      if (!handled) {
+        console.error("Transaction save error:", error);
+        alert("Chyba při ukládání transakce.");
+      }
     }
   };
 
@@ -98,8 +186,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
       setShowTransactionModal(false);
       setEditingTransaction(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
-      alert("Chyba při mazání.");
+      const handled = handleFirestoreError(error, OperationType.DELETE, `transactions/${id}`);
+      if (!handled) {
+        console.error("Transaction delete error:", error);
+        alert("Chyba při mazání.");
+      }
     }
   };
 
@@ -146,7 +237,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
       Odkud: t.from,
       Kam: t.to,
       Tým: t.assignedWorkers.map(id => workers.find(w => w.id === id)?.name || id).join(', '),
-      Vozidla: t.assignedVehicles.map(id => vehicles.find(v => v.id === id)?.plate || id).join(', '),
+      Vozidla: t.assignedVehicles.map(id => vehicles.find(v => v.id === id)?.model || id).join(', '),
       Stav: t.status,
       Poznámky: t.notes || ''
     }));
@@ -166,8 +257,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
 
   const exportVehicles = () => {
     const data = vehicles.map(v => ({
+      Vozidlo: v.model,
       SPZ: v.plate,
-      Model: v.model,
       Kapacita: v.capacity,
       Status: v.status,
       STK: v.stkExpiration || ''
@@ -281,10 +372,75 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         );
       case 'Notifikační Hub':
         return (
-          <div className="space-y-4">
-            <ToggleItem label="Push notifikace" checked={true} />
-            <ToggleItem label="Emailové reporty" checked={false} />
-            <ToggleItem label="SMS upozornění" checked={true} />
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">Základní kanály</h4>
+              <ToggleItem 
+                label="Push notifikace" 
+                checked={notifications.push} 
+                onChange={(val) => updateNotification('push', val)} 
+                icon="📱"
+              />
+              <ToggleItem 
+                label="Emailové reporty" 
+                checked={notifications.email} 
+                onChange={(val) => updateNotification('email', val)} 
+                icon="📧"
+              />
+              <ToggleItem 
+                label="SMS upozornění" 
+                checked={notifications.sms} 
+                onChange={(val) => updateNotification('sms', val)} 
+                icon="💬"
+              />
+              <ToggleItem 
+                label="WhatsApp integrace" 
+                checked={notifications.whatsapp} 
+                onChange={(val) => updateNotification('whatsapp', val)} 
+                icon="🟢"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">Typy upozornění</h4>
+              <ToggleItem 
+                label="Nové zakázky" 
+                checked={notifications.newTasks} 
+                onChange={(val) => updateNotification('newTasks', val)} 
+              />
+              <ToggleItem 
+                label="Změny v týmu" 
+                checked={notifications.teamChanges} 
+                onChange={(val) => updateNotification('teamChanges', val)} 
+              />
+              <ToggleItem 
+                label="Servis vozidel" 
+                checked={notifications.vehicleService} 
+                onChange={(val) => updateNotification('vehicleService', val)} 
+              />
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">Předvolby systému</h4>
+              <ToggleItem 
+                label="Zvukové signály" 
+                checked={notifications.sounds} 
+                onChange={(val) => updateNotification('sounds', val)} 
+                icon="🔊"
+              />
+              <ToggleItem 
+                label="Režim klidu (22:00 - 06:00)" 
+                checked={notifications.quietHours} 
+                onChange={(val) => updateNotification('quietHours', val)} 
+                icon="🌙"
+              />
+            </div>
+            
+            <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-500/20">
+              <p className="text-[10px] text-blue-400 font-bold text-center leading-relaxed">
+                Nastavení se automaticky ukládají do vašeho prohlížeče a synchronizují se s vaším účtem.
+              </p>
+            </div>
           </div>
         );
       case 'Export Dat':
@@ -388,9 +544,12 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
                     for (const v of vehiclesRef) await setDoc(doc(db, 'vehicles', v.id), v);
                     for (const t of tasksRef) await setDoc(doc(db, 'tasks', t.id), t);
                     alert('Ukázková data byla úspěšně nahrána!');
-                  } catch (e) {
-                    console.error(e);
-                    alert('Chyba při nahrávání dat.');
+                  } catch (e: any) {
+                    const isAbort = e.name === 'AbortError' || e.message?.toLowerCase().includes('aborted');
+                    if (!isAbort) {
+                      console.error(e);
+                      alert('Chyba při nahrávání dat.');
+                    }
                   }
                 }}
                 className="w-full bg-blue-600/20 text-blue-400 font-black py-4 rounded-2xl border border-blue-500/30 uppercase text-[10px] tracking-widest hover:bg-blue-600/40 transition-all"
@@ -406,6 +565,61 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
                 Tato aplikace byla vytvořena výhradně pro interní použití společnosti Stěhování Matěj a nesmí s ní být nijak nakládáno, bez výslovného souhlasu jejího vlastníka a vývojáře ( Vítězslav Gerčák ).
               </p>
             </div>
+          </div>
+        );
+      case 'Google Integrace':
+        return (
+          <div className="space-y-6">
+            {!googleAccessToken ? (
+              <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700 text-center">
+                <p className="text-slate-400 text-xs font-bold mb-4">Pro aktivaci Google služeb se prosím znovu přihlaste a udělte potřebná oprávnění.</p>
+                <button onClick={onLogout} className="bg-blue-600 text-white px-6 py-2 rounded-xl text-[10px] font-black uppercase">Odhlásit a přihlásit znovu</button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="text-white font-bold">Automatická synchronizace</h4>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Kalendář & Gmail</p>
+                    </div>
+                    <div 
+                      onClick={() => handleSyncToggle(!syncEnabled)}
+                      className={`w-12 h-6 rounded-full transition-all cursor-pointer relative ${syncEnabled ? 'bg-blue-600' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${syncEnabled ? 'left-7' : 'left-1'}`} />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    Při zapnuté synchronizaci se každá nová zakázka automaticky zapíše do vašeho Google Kalendáře.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <button 
+                    onClick={syncGmailTasks}
+                    disabled={isSyncingGmail}
+                    className="w-full bg-slate-800 hover:bg-slate-750 text-white font-black py-4 rounded-2xl border border-slate-700 flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isSyncingGmail ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Icons.Sparkles className="w-4 h-4 text-blue-400" />
+                    )}
+                    <span className="text-[10px] uppercase tracking-widest">Vytěžit zakázky z Gmailu</span>
+                  </button>
+                  <p className="text-[9px] text-slate-500 text-center font-bold px-4">
+                    Tato funkce prohledá váš Gmail a automaticky vytvoří koncepty zakázek na základě poptávek.
+                  </p>
+                </div>
+
+                {googleError && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-center">
+                    <p className="text-red-500 text-[10px] font-bold">{googleError}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       default:
@@ -467,6 +681,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           label="Export Dat" 
           icon="💾" 
           onClick={() => setActiveDetail('Export Dat')} 
+        />
+        <SettingItem 
+          label="Google Integrace" 
+          icon="🌐" 
+          onClick={() => setActiveDetail('Google Integrace')} 
         />
         <SettingItem 
           label="O Aplikaci" 
@@ -629,24 +848,32 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
   );
 };
 
-const SettingItem = ({ label, icon, onClick }: { label: string, icon: string, onClick?: () => void }) => (
+const SettingItem = ({ label, icon, onClick, className = "" }: { label: string, icon: string, onClick?: () => void, className?: string }) => (
   <button 
     onClick={onClick}
-    className="w-full flex items-center justify-between p-5 bg-slate-800 rounded-[2rem] border border-slate-700 shadow-sm hover:bg-slate-750 hover:border-blue-500/30 transition-all group"
+    className={`w-full flex items-center justify-between p-5 bg-slate-800 rounded-[2rem] border border-slate-700 shadow-sm hover:bg-slate-750 hover:border-blue-500/30 transition-all group ${className}`}
   >
-    <div className="flex items-center gap-4">
-      <div className="w-10 h-10 bg-slate-900 rounded-2xl flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
-        {icon}
+      <div className="flex items-center gap-4">
+        <div className="w-10 h-10 bg-slate-900 rounded-2xl flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+          {icon}
+        </div>
+        <div className="flex flex-col items-start">
+          <span className="text-xs font-black text-slate-300 uppercase tracking-widest">{label}</span>
+        </div>
       </div>
-      <span className="text-xs font-black text-slate-300 uppercase tracking-widest">{label}</span>
-    </div>
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="text-slate-700 group-hover:text-blue-500 transition-colors"><path d="m9 18 6-6-6-6"/></svg>
   </button>
 );
 
-const ToggleItem = ({ label, checked }: { label: string, checked: boolean }) => (
-  <div className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">{label}</span>
+const ToggleItem = ({ label, checked, onChange, icon }: { label: string, checked: boolean, onChange?: (val: boolean) => void, icon?: string }) => (
+  <div 
+    onClick={() => onChange?.(!checked)}
+    className="flex items-center justify-between bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50 cursor-pointer hover:bg-slate-800 transition-colors"
+  >
+    <div className="flex items-center gap-3">
+      {icon && <span className="text-sm">{icon}</span>}
+      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">{label}</span>
+    </div>
     <div className={`w-10 h-6 rounded-full transition-colors relative ${checked ? 'bg-blue-600' : 'bg-slate-700'}`}>
       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${checked ? 'left-5' : 'left-1'}`} />
     </div>

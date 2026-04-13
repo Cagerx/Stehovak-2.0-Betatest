@@ -18,7 +18,8 @@ import {
   StopCircle, 
   Zap,
   BookOpen,
-  Trash
+  Trash,
+  AlertTriangle
 } from 'lucide-react';
 
 export const COLORS = {
@@ -53,6 +54,7 @@ export const Icons = {
   StopCircle: StopCircle,
   Zap: Zap,
   BookOpen: BookOpen,
-  Trash: Trash
+  Trash: Trash,
+  AlertTriangle: AlertTriangle
 };
 
