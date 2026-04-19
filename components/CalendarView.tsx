@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { MoveTask, Worker, Vehicle } from '../types';
+import { MoveTask, Worker, Vehicle, OperationType } from '../types';
 import { Icons, COLORS } from '../constants';
 import { geminiService } from '../services/geminiService';
 import { db } from '../firebase';
 import { doc, setDoc, Timestamp, addDoc, collection, deleteDoc } from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../App';
+import { handleFirestoreError } from '../App';
 import { googleService } from '../services/googleService';
 
 interface CalendarViewProps {
@@ -13,18 +13,23 @@ interface CalendarViewProps {
   setTasks: React.Dispatch<React.SetStateAction<MoveTask[]>>;
   workers: Worker[];
   vehicles: Vehicle[];
-  user: { role: 'admin' | 'user' };
+  user: { 
+    role: 'admin' | 'user';
+    workerId?: string;
+  };
   googleAccessToken: string | null;
+  showToast: (message: string) => void;
 }
 
 type ViewMode = 'day' | 'week' | 'list';
 
-const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, vehicles, user, googleAccessToken }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, vehicles, user, googleAccessToken, showToast }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,6 +47,34 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
   const [quickNoteText, setQuickNoteText] = useState('');
   const [modalImage, setModalImage] = useState<string | null>(null);
   const modalFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // --- SPEECH RECOGNITION (STT) for Czech ---
+  const startSTT = (callback: (text: string) => void) => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Rozpoznávání řeči není v tomto prohlížeči podporováno.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'cs-CZ';
+    recognition.interimResults = true;
+    
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    recognition.onerror = () => setIsRecording(false);
+    
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((res: any) => res[0].transcript)
+        .join('');
+      if (event.results[0].isFinal) {
+        callback(transcript);
+      }
+    };
+
+    recognition.start();
+  };
 
   const handleQuickNoteSubmit = async () => {
     if (!quickNoteText || isAnalyzing) return;
@@ -66,7 +99,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
         end,
         assignedWorkers: [],
         assignedVehicles: [],
-        notes: quickNoteText
+        notes: quickNoteText,
+        estimatedPrice: extractedData.estimatedPrice
       });
       
       setIsEditing(false);
@@ -120,7 +154,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
     const end = new Date(start.getTime() + 3 * 60 * 60 * 1000);
     setCurrentTask({
       title: '', customer: '', customerPhone: '', from: '', to: '',
-      status: 'Pending', type: 'Stěhování', priority: 'Medium', start, end, assignedWorkers: [], assignedVehicles: [], notes: '', images: []
+      status: 'Pending', type: 'Stěhování', priority: 'Medium', start, end, assignedWorkers: [], assignedVehicles: [], notes: '', images: [], estimatedPrice: undefined
     });
     setShowModal(true);
   };
@@ -133,7 +167,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
   };
 
   const saveTask = async () => {
-    if (!currentTask.title || !currentTask.start || !currentTask.end) return;
+    if (!currentTask.title || !currentTask.start || !currentTask.end || !currentTask.customer || !currentTask.from || !currentTask.to) {
+      alert("Prosím vyplňte všechna povinná pole (Název, Zákazník, Start, Konec, Odkud, Kam).");
+      return;
+    }
     const taskData = {
       ...currentTask,
       id: currentTask.id || Math.random().toString(36).substr(2, 9),
@@ -197,6 +234,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
         }
         // ----------------------------------------
       }
+      showToast("Změny byly uloženy");
       setShowModal(false);
     } catch (error) {
       const handled = handleFirestoreError(error, OperationType.WRITE, `tasks/${taskData.id}`);
@@ -208,6 +246,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
     if (!window.confirm("Opravdu chcete tuto zakázku smazat?")) return;
     try {
       await deleteDoc(doc(db, 'tasks', id));
+      showToast("Zakázka smazána");
       setShowModal(false);
     } catch (error) {
       const handled = handleFirestoreError(error, OperationType.DELETE, `tasks/${id}`);
@@ -254,6 +293,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       if (extractedData.customerPhone) updates.customerPhone = extractedData.customerPhone;
       if (extractedData.from) updates.from = extractedData.from;
       if (extractedData.to) updates.to = extractedData.to;
+      if (extractedData.estimatedPrice) updates.estimatedPrice = extractedData.estimatedPrice;
 
       // Aplikace změn pouze pro nevyplněná pole nebo přepis
       setCurrentTask(prev => ({ ...prev, ...updates }));
@@ -288,6 +328,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       if (extractedData.customerPhone) updates.customerPhone = extractedData.customerPhone;
       if (extractedData.from) updates.from = extractedData.from;
       if (extractedData.to) updates.to = extractedData.to;
+      if (extractedData.estimatedPrice) updates.estimatedPrice = extractedData.estimatedPrice;
       if (extractedData.notes) updates.notes = (currentTask.notes ? currentTask.notes + "\n\n" : "") + extractedData.notes;
 
       setCurrentTask(prev => ({ ...prev, ...updates }));
@@ -301,6 +342,26 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       }
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const getStatusLabel = (status: MoveTask['status']) => {
+    switch (status) {
+      case 'Pending': return 'Čeká';
+      case 'Confirmed': return 'Potvrzeno';
+      case 'In Progress': return 'Probíhá';
+      case 'Completed': return 'Hotovo';
+      default: return status;
+    }
+  };
+
+  const getPriorityLabel = (priority: MoveTask['priority']) => {
+    switch (priority) {
+      case 'Low': return 'Nízká';
+      case 'Medium': return 'Střední';
+      case 'High': return 'Vysoká';
+      case 'Critical': return 'Kritická';
+      default: return priority;
     }
   };
 
@@ -358,7 +419,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
              const height = (endHour - startHour) * HOUR_HEIGHT;
              return (
                <div key={task.id} onClick={() => handleOpenEdit(task)} className="absolute w-full p-1 z-20" style={{ top: `${top}px`, height: `${height}px` }}>
-                 <div className={`h-full w-full rounded-2xl border p-4 shadow-lg flex flex-col justify-between overflow-hidden ${task.status === 'Confirmed' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-red-600 border-red-500 text-white'}`}>
+                 <div className={`h-full w-full rounded-2xl border p-4 shadow-lg flex flex-col justify-between overflow-hidden ${
+                    task.status === 'Completed' ? 'bg-green-600 border-green-500 text-white' : 
+                    task.status === 'Confirmed' ? 'bg-blue-600 border-blue-500 text-white' : 
+                    'bg-red-600 border-red-500 text-white'
+                  }`}>
                    <div>
                      <h4 className="text-xs md:text-lg font-black leading-none truncate">{task.title}</h4>
                      <p className="text-[9px] md:text-sm font-bold opacity-70 uppercase mt-1 truncate">{task.customer}</p>
@@ -415,14 +480,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
               
               <div className="space-y-2">
                 {dayTasks.length > 0 ? dayTasks.map(task => (
-                  <div key={task.id} onClick={() => handleOpenEdit(task)} className="bg-slate-900/50 p-3 md:p-4 rounded-xl border border-white/5 flex items-center justify-between group cursor-pointer hover:bg-slate-900 transition-all">
+                  <div key={task.id} onClick={() => handleOpenEdit(task)} className={`p-3 md:p-4 rounded-xl border flex items-center justify-between group cursor-pointer transition-all ${task.status === 'Completed' ? 'bg-green-900/20 border-green-500/30 hover:bg-green-900/30' : 'bg-slate-900/50 border-white/5 hover:bg-slate-900'}`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
+                      <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${task.status === 'Completed' ? 'bg-green-500' : task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
                       <div>
                         <p className="text-xs md:text-base font-bold text-slate-200 group-hover:text-blue-400 transition-colors">{task.title}</p>
                         <p className="text-[9px] md:text-xs text-white/50 font-black uppercase">{task.customer}</p>
                         
                         <div className="mt-1 flex flex-wrap gap-2 opacity-60">
+                          {task.estimatedPrice && (
+                            <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase text-blue-300">
+                              <span>{task.estimatedPrice.toLocaleString()} Kč</span>
+                            </div>
+                          )}
                           {task.assignedWorkers.length > 0 && (
                             <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-black uppercase">
                               <Icons.User className="w-2 h-2 md:w-3 md:h-3" />
@@ -455,15 +525,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
     return (
       <div className="flex-1 overflow-y-auto no-scrollbar p-5 md:p-8 space-y-4 bg-slate-900">
         {filteredTasks.length > 0 ? filteredTasks.map(task => (
-          <div key={task.id} onClick={() => handleOpenEdit(task)} className="bg-slate-800 rounded-3xl p-5 border border-white/10 hover:border-blue-500 transition-all cursor-pointer group">
+          <div key={task.id} onClick={() => handleOpenEdit(task)} className={`rounded-3xl p-5 border transition-all cursor-pointer group ${task.status === 'Completed' ? 'bg-green-950/20 border-green-500/30 hover:border-green-500' : 'bg-slate-800 border-white/10 hover:border-blue-500'}`}>
             <div className="flex justify-between items-start mb-3">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 uppercase">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
                     {task.type}
                   </span>
                 </div>
-                <h4 className="text-lg font-black text-white group-hover:text-blue-400 transition-colors">{task.title}</h4>
+                <h4 className={`text-lg font-black transition-colors ${task.status === 'Completed' ? 'text-green-400 group-hover:text-green-300' : 'text-white group-hover:text-blue-400'}`}>{task.title}</h4>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{task.customer}</p>
               </div>
               <div className="text-right">
@@ -473,11 +543,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
             </div>
             <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase text-slate-400 border-t border-slate-700/50 pt-3">
               <div className="flex items-center gap-1.5">
-                <Icons.Map className="w-3 h-3 text-blue-500" />
+                <Icons.Map className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-500' : 'text-blue-500'}`} />
                 <span className="truncate max-w-[150px]">{task.from} → {task.to}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <Icons.User className="w-3 h-3 text-green-500" />
+                <Icons.User className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-600' : 'text-green-500'}`} />
                 <span>
                   {task.assignedWorkers.length > 0 
                     ? task.assignedWorkers.map(wid => workers.find(w => w.id === wid)?.name).filter(Boolean).join(', ')
@@ -485,9 +555,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
-                <span>{task.status}</span>
+                <div className={`w-2 h-2 rounded-full ${task.status === 'Completed' ? 'bg-green-500' : task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
+                <span className={task.status === 'Completed' ? 'text-green-500' : ''}>{getStatusLabel(task.status)}</span>
               </div>
+              {task.estimatedPrice && (
+                <div className="flex items-center gap-1.5 text-blue-400 font-black ml-auto">
+                  <span>{task.estimatedPrice.toLocaleString()} Kč</span>
+                </div>
+              )}
             </div>
           </div>
         )) : (
@@ -564,12 +639,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
               <Icons.Plus className="rotate-45" />
             </button>
           </div>
-          <textarea 
-            value={quickNoteText}
-            onChange={e => setQuickNoteText(e.target.value)}
-            placeholder="Vložte text (např. 'Karel Novák, 777123456, z Prahy do Brna, stěhování bytu 2+kk')"
-            className="w-full bg-slate-900 border-none rounded-2xl p-4 text-sm text-white placeholder-slate-600 min-h-[100px] focus:ring-2 focus:ring-blue-500/50 transition-all"
-          />
+          <div className="relative">
+            <textarea 
+              value={quickNoteText}
+              onChange={e => setQuickNoteText(e.target.value)}
+              placeholder="Vložte text (např. 'Karel Novák, 777123456, z Prahy do Brna, stěhování bytu 2+kk')"
+              className="w-full bg-slate-900 border-none rounded-2xl p-4 pr-14 text-sm text-white placeholder-slate-600 min-h-[100px] focus:ring-2 focus:ring-blue-500/50 transition-all"
+            />
+            <button 
+              onClick={() => startSTT((text) => setQuickNoteText(prev => prev ? `${prev} ${text}` : text))}
+              className={`absolute right-4 top-4 p-2 rounded-xl transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-800 text-slate-500 hover:text-white'}`}
+              title="Diktovat česky"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </button>
+          </div>
           <div className="flex justify-end gap-3">
             <button 
               onClick={handleQuickNoteSubmit}
@@ -738,18 +822,30 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                 <input value={currentTask.title} onChange={e => setCurrentTask({...currentTask, title: e.target.value})} placeholder="např. Stěhování bytu 3+1" className="w-full bg-slate-800 rounded-xl p-4 text-white border-none font-bold" />
               </div>
 
-              <div className="space-y-1">
+               <div className="space-y-1">
                 <label className="text-xs font-black text-white uppercase px-1">Druh zakázky</label>
-                <select 
-                  value={currentTask.type} 
-                  onChange={e => setCurrentTask({...currentTask, type: e.target.value})}
-                  className="w-full bg-slate-800 rounded-xl p-3 text-sm text-white border-none outline-none"
-                >
-                  <option value="Stěhování">Stěhování</option>
-                  <option value="Vyklízení">Vyklízení</option>
-                  <option value="Montáž">Montáž</option>
-                  <option value="Doprava">Doprava</option>
-                </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <select 
+                    value={currentTask.type} 
+                    onChange={e => setCurrentTask({...currentTask, type: e.target.value})}
+                    className="w-full bg-slate-800 rounded-xl p-3 text-sm text-white border-none outline-none"
+                  >
+                    <option value="Stěhování">Stěhování</option>
+                    <option value="Vyklízení">Vyklízení</option>
+                    <option value="Montáž">Montáž</option>
+                    <option value="Doprava">Doprava</option>
+                  </select>
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      value={currentTask.estimatedPrice || ''} 
+                      onChange={e => setCurrentTask({...currentTask, estimatedPrice: e.target.value ? Number(e.target.value) : undefined})} 
+                      placeholder="Odhad. cena"
+                      className="w-full bg-slate-800 rounded-xl p-3 text-sm text-white border-none pr-10" 
+                    />
+                    <span className="absolute right-3 top-3.5 text-[10px] font-black text-slate-500 uppercase">Kč</span>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -871,32 +967,68 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                     {analysisError}
                   </div>
                 )}
-                <textarea 
-                    value={currentTask.notes || ''} 
-                    onChange={e => {
-                      setCurrentTask({...currentTask, notes: e.target.value});
-                      if (analysisError) setAnalysisError(null);
-                    }} 
-                    placeholder="Vložte text, např.: 'Karel Novák, 777123456, Nakládka: Praha 1, Vykládka: Brno'"
-                    className="w-full bg-slate-800 rounded-xl p-4 text-sm text-white border-none min-h-[120px] focus:ring-2 focus:ring-blue-500/50 transition-all"
-                    rows={5}
-                />
+                <div className="relative">
+                    <textarea 
+                        value={currentTask.notes || ''} 
+                        onChange={e => {
+                          setCurrentTask({...currentTask, notes: e.target.value});
+                          if (analysisError) setAnalysisError(null);
+                        }} 
+                        placeholder="Vložte text, např.: 'Karel Novák, 777123456, Nakládka: Praha 1, Vykládka: Brno'"
+                        className="w-full bg-slate-800 rounded-xl p-4 pr-14 text-sm text-white border-none min-h-[120px] focus:ring-2 focus:ring-blue-500/50 transition-all"
+                        rows={5}
+                    />
+                    <button 
+                      onClick={() => startSTT((text) => setCurrentTask(prev => ({...prev, notes: prev.notes ? `${prev.notes} ${text}` : text})))}
+                      className={`absolute right-4 top-4 p-2 rounded-xl transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                      title="Diktovat česky"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                    </button>
+                </div>
                 <p className="text-[9px] text-slate-600 px-1 leading-relaxed">
                     Tip: Zkopírujte sem text emailu nebo zprávu od klienta a klikněte na <span className="text-blue-500/70">Rozpoznat údaje</span> pro automatické vyplnění polí pomocí Gemini AI.
                 </p>
               </div>
 
-              <div className="flex gap-4 pt-4">
-                <button onClick={() => setShowModal(false)} className="flex-1 text-slate-500 font-black uppercase text-xs tracking-widest">Zrušit</button>
-                {isEditing && user.role === 'admin' && (
+              <div className="flex flex-col gap-3 pt-4">
+                {isEditing && (user.role === 'admin' || (user.workerId && currentTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && currentTask.status !== 'Completed' && (
                   <button 
-                    onClick={() => deleteTask(currentTask.id!)} 
-                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                    onClick={async () => {
+                      const updatedTask = { ...currentTask, status: 'Completed' as const };
+                      setCurrentTask(updatedTask);
+                      
+                      // Immediate save for status change
+                      try {
+                        await setDoc(doc(db, 'tasks', currentTask.id!), {
+                          ...updatedTask,
+                          start: Timestamp.fromDate(new Date(updatedTask.start!)),
+                          end: Timestamp.fromDate(new Date(updatedTask.end!))
+                        });
+                        showToast("Zakázka byla dokončena! 🎉");
+                        setShowModal(false);
+                      } catch (error) {
+                        handleFirestoreError(error, OperationType.WRITE, `tasks/${currentTask.id}`);
+                      }
+                    }}
+                    className="w-full bg-green-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-green-600/20 uppercase text-xs tracking-widest flex items-center justify-center gap-2 animate-bounce-subtle"
                   >
-                    <Icons.Trash className="w-5 h-5" />
+                    <Icons.Check className="w-4 h-4" /> Dokončit zakázku (Hotovo)
                   </button>
                 )}
-                <button onClick={saveTask} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-xs tracking-widest">Uložit změny</button>
+                
+                <div className="flex gap-4">
+                  <button onClick={() => setShowModal(false)} className="flex-1 text-slate-500 font-black uppercase text-xs tracking-widest">Zrušit</button>
+                  {isEditing && user.role === 'admin' && (
+                    <button 
+                      onClick={() => deleteTask(currentTask.id!)} 
+                      className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                    >
+                      <Icons.Trash className="w-5 h-5" />
+                    </button>
+                  )}
+                  <button onClick={saveTask} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-xs tracking-widest">Uložit změny</button>
+                </div>
               </div>
             </div>
           </div>

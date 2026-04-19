@@ -32,7 +32,8 @@ export async function testDatabaseConnection() {
                     errorMessage.includes('aborted') || 
                     errorMessage.includes('cancel') ||
                     errorMessage.includes('the user aborted a request') ||
-                    errorMessage.includes('signal is aborted');
+                    errorMessage.includes('signal is aborted') ||
+                    errorMessage.includes('failed to fetch');
     
     if (isAbort) return false;
 

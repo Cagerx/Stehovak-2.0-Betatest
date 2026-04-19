@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Icons, COLORS } from '../constants';
-import { Transaction, MoveTask, Worker, Vehicle } from '../types';
+import { Transaction, MoveTask, Worker, Vehicle, CompanySettings, OperationType } from '../types';
 import { db } from '../firebase';
 import { doc, setDoc, Timestamp, deleteDoc } from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../App';
+import { handleFirestoreError } from '../App';
+import AILab from './AILab';
 
 import { googleService, GoogleCalendarEvent, GmailMessage } from '../services/googleService';
 
@@ -18,13 +19,16 @@ interface ProfileProps {
   workers: Worker[];
   vehicles: Vehicle[];
   googleAccessToken: string | null;
+  showToast: (message: string) => void;
+  companySettings: CompanySettings | null;
 }
 
-const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTransactions, tasks, workers, vehicles, googleAccessToken }) => {
+const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTransactions, tasks, workers, vehicles, googleAccessToken, showToast, companySettings }) => {
   const [activeDetail, setActiveDetail] = useState<string | null>(null);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Partial<Transaction> | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<CompanySettings | null>(null);
   
   const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([]);
   const [gmailMessages, setGmailMessages] = useState<GmailMessage[]>([]);
@@ -54,11 +58,13 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
     const newSettings = { ...notifications, [key]: val };
     setNotifications(newSettings);
     localStorage.setItem('app_notifications', JSON.stringify(newSettings));
+    showToast("Nastavení aktualizováno");
   };
 
   const handleSyncToggle = (val: boolean) => {
     setSyncEnabled(val);
     localStorage.setItem('google_sync_enabled', val.toString());
+    showToast("Synchronizace nastavena");
   };
 
   const syncGmailTasks = async () => {
@@ -97,8 +103,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           count++;
         }
       }
-      setSuccessMessage(`Synchronizováno ${count} nových zakázek z Gmailu`);
-      setTimeout(() => setSuccessMessage(null), 3000);
+      showToast(`Synchronizováno ${count} nových zakázek z Gmailu`);
     } catch (error: any) {
       const handled = handleFirestoreError(error, OperationType.WRITE, 'tasks/sync');
       if (!handled) {
@@ -163,8 +168,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         date: Timestamp.fromDate(newTr.date)
       });
       
-      setSuccessMessage(editingTransaction.id ? "Záznam upraven" : "Platba uložena");
-      setTimeout(() => setSuccessMessage(null), 3000);
+      showToast(editingTransaction.id ? "Záznam upraven" : "Platba uložena");
 
       setShowTransactionModal(false);
       setEditingTransaction(null);
@@ -177,12 +181,30 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
     }
   };
 
+  const saveCompanyInfo = async () => {
+    if (!editingCompany || !editingCompany.name || !editingCompany.address || !editingCompany.phone || !editingCompany.email) {
+      alert("Prosím vyplňte povinná pole (Název, Adresa, Telefon, Email).");
+      return;
+    }
+
+    try {
+      await setDoc(doc(db, 'settings', 'company'), editingCompany);
+      showToast("Změny byly uloženy");
+      setShowCompanyModal(false);
+    } catch (error) {
+      const handled = handleFirestoreError(error, OperationType.WRITE, 'settings/company');
+      if (!handled) {
+        console.error("Company info save error:", error);
+        alert("Chyba při ukládání informací o firmě.");
+      }
+    }
+  };
+
   const deleteTransaction = async (id: string) => {
     if (!confirm("Opravdu chcete tento záznam smazat?")) return;
     try {
       await deleteDoc(doc(db, 'transactions', id));
-      setSuccessMessage("Záznam smazán");
-      setTimeout(() => setSuccessMessage(null), 3000);
+      showToast("Záznam smazán");
       setShowTransactionModal(false);
       setEditingTransaction(null);
     } catch (error) {
@@ -282,26 +304,56 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
   const renderDetail = () => {
     switch (activeDetail) {
       case 'Informace o firmě':
+        const displayInfo = companySettings || {
+          name: 'Stěhovák 2.0 Logistics s.r.o.',
+          address: 'Logistická 42, 110 00 Praha 1',
+          phone: '+420 800 123 456',
+          email: 'info@stehovak2.com',
+          taxId: '12345678',
+          vatId: 'CZ12345678'
+        };
+
         return (
           <div className="space-y-6">
             <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Název firmy</p>
-              <p className="text-white font-bold">Stěhovák 2.0 Logistics s.r.o.</p>
+              <p className="text-white font-bold">{displayInfo.name}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">IČO</p>
-                <p className="text-white font-bold text-sm">12345678</p>
+                <p className="text-white font-bold text-sm">{displayInfo.taxId || '---'}</p>
               </div>
               <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">DIČ</p>
-                <p className="text-white font-bold text-sm">CZ12345678</p>
+                <p className="text-white font-bold text-sm">{displayInfo.vatId || '---'}</p>
               </div>
             </div>
             <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sídlo</p>
-              <p className="text-white font-bold text-sm">Logistická 42, 110 00 Praha 1</p>
+              <p className="text-white font-bold text-sm">{displayInfo.address}</p>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Telefon</p>
+                <p className="text-white font-bold text-sm">{displayInfo.phone}</p>
+              </div>
+              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Email</p>
+                <p className="text-white font-bold text-sm">{displayInfo.email}</p>
+              </div>
+            </div>
+            {isAdmin && (
+              <button 
+                onClick={() => {
+                  setEditingCompany({ ...displayInfo } as CompanySettings);
+                  setShowCompanyModal(true);
+                }}
+                className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2"
+              >
+                <Icons.Edit className="w-4 h-4" /> Upravit údaje
+              </button>
+            )}
           </div>
         );
       case 'Přijaté platby a výdaje':
@@ -457,6 +509,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
              <ExportButton label="Exportovat Transakce" onClick={exportTransactions} icon={<Icons.Sparkles />} />
           </div>
         );
+      case 'AI Laboratoř':
+        return <AILab user={user} showToast={showToast} />;
       case 'O Aplikaci':
         return (
           <div className="space-y-6">
@@ -629,19 +683,6 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
 
   return (
     <div className="space-y-8 flex flex-col items-center animate-fade-in">
-      <AnimatePresence>
-        {successMessage && (
-          <motion.div 
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 20 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed top-4 z-[100] bg-green-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-2xl flex items-center gap-2"
-          >
-            <Icons.Sparkles className="w-4 h-4" />
-            {successMessage}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="text-center mt-8">
         <div className="w-32 h-32 rounded-[40px] border-4 border-white/20 shadow-2xl mx-auto overflow-hidden relative mb-6">
@@ -688,6 +729,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           onClick={() => setActiveDetail('Google Integrace')} 
         />
         <SettingItem 
+          label="AI Laboratoř" 
+          icon="✨" 
+          onClick={() => setActiveDetail('AI Laboratoř')} 
+        />
+        <SettingItem 
           label="O Aplikaci" 
           icon="🚀" 
           onClick={() => setActiveDetail('O Aplikaci')} 
@@ -729,6 +775,93 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
               >
                 Zavřít detail
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Company Info Edit Modal */}
+      <AnimatePresence>
+        {showCompanyModal && editingCompany && (
+          <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-[60] flex items-end sm:items-center justify-center p-4" onClick={() => setShowCompanyModal(false)}>
+            <motion.div 
+              initial={{ opacity: 0, y: 100 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 100 }}
+              className="bg-slate-900 w-full max-w-sm rounded-[32px] p-8 border border-slate-800 shadow-2xl overflow-y-auto no-scrollbar max-h-[90vh]"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-black text-white uppercase tracking-tighter">Upravit údaje firmy</h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Název firmy</label>
+                  <input 
+                    value={editingCompany.name} 
+                    onChange={e => setEditingCompany({...editingCompany, name: e.target.value})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Sídlo (Adresa)</label>
+                  <input 
+                    value={editingCompany.address} 
+                    onChange={e => setEditingCompany({...editingCompany, address: e.target.value})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Telefon</label>
+                    <input 
+                      value={editingCompany.phone} 
+                      onChange={e => setEditingCompany({...editingCompany, phone: e.target.value})}
+                      className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Email</label>
+                    <input 
+                      value={editingCompany.email} 
+                      onChange={e => setEditingCompany({...editingCompany, email: e.target.value})}
+                      className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">IČO</label>
+                    <input 
+                      value={editingCompany.taxId || ''} 
+                      onChange={e => setEditingCompany({...editingCompany, taxId: e.target.value})}
+                      className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">DIČ</label>
+                    <input 
+                      value={editingCompany.vatId || ''} 
+                      onChange={e => setEditingCompany({...editingCompany, vatId: e.target.value})}
+                      className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase px-1 tracking-widest">Webová stránka</label>
+                  <input 
+                    value={editingCompany.website || ''} 
+                    onChange={e => setEditingCompany({...editingCompany, website: e.target.value})}
+                    className="w-full bg-slate-800 rounded-2xl p-4 text-white border-none font-bold outline-none focus:ring-2 ring-blue-500/50"
+                  />
+                </div>
+                
+                <div className="flex gap-4 pt-4">
+                  <button onClick={() => setShowCompanyModal(false)} className="flex-1 text-slate-500 font-black uppercase text-[10px] tracking-widest">Zrušit</button>
+                  <button onClick={saveCompanyInfo} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-[10px] tracking-widest active:scale-95 transition-all">Uložit změny</button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

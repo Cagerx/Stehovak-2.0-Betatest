@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MoveTask, Worker, Vehicle } from '../types';
+import { MoveTask, Worker, Vehicle, OperationType } from '../types';
 import { Icons } from '../constants';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../App';
+import { handleFirestoreError } from '../App';
 
 interface DashboardProps {
   tasks: MoveTask[];
@@ -14,9 +14,10 @@ interface DashboardProps {
     workerId?: string;
     role: 'admin' | 'user';
   };
+  showToast: (message: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user }) => {
+const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, showToast }) => {
   const [selectedTask, setSelectedTask] = useState<MoveTask | null>(null);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
 
@@ -113,6 +114,17 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
     .filter(t => isTomorrow(t.start))
     .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
 
+  const myActiveTask = useMemo(() => {
+    if (!user.workerId) return null;
+    const now = new Date();
+    return tasks.find(t => 
+      t.assignedWorkers.includes(user.workerId!) && 
+      t.status === 'In Progress' &&
+      now >= t.start && 
+      now <= t.end
+    );
+  }, [tasks, user.workerId]);
+
   const handleOpenMaps = (address?: string) => {
     if (!address) return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
@@ -148,17 +160,31 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
     return `${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
   };
 
+  const getStatusLabel = (status: MoveTask['status']) => {
+    switch (status) {
+      case 'Pending': return 'Čeká';
+      case 'Confirmed': return 'Potvrzeno';
+      case 'In Progress': return 'Probíhá';
+      case 'Completed': return 'Hotovo';
+      default: return status;
+    }
+  };
+
   const renderTaskCard = (task: MoveTask, index: number = 0) => (
     <motion.div
       key={task.id}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.1 }}
-      className="w-full bg-slate-800 p-5 md:p-8 rounded-[2.5rem] shadow-sm border border-white/10 flex flex-col gap-4 hover:border-blue-500/30 transition-all relative overflow-hidden"
+      className={`w-full p-5 md:p-8 rounded-[2.5rem] shadow-sm border flex flex-col gap-4 transition-all relative overflow-hidden ${
+        task.status === 'Completed' 
+          ? 'bg-green-950/20 border-green-500/30 hover:border-green-500' 
+          : 'bg-slate-800 border-white/10 hover:border-blue-500/30'
+      }`}
     >
       <div className="flex items-center gap-5 md:gap-8 cursor-pointer" onClick={() => setSelectedTask(task)}>
-        <div className="flex flex-col items-center justify-center bg-slate-900 rounded-[2rem] p-4 md:p-6 min-w-[75px] md:min-w-[100px] text-white/70">
-          <span className="font-black text-xl md:text-2xl leading-none text-white">
+        <div className={`flex flex-col items-center justify-center rounded-[2rem] p-4 md:p-6 min-w-[75px] md:min-w-[100px] ${task.status === 'Completed' ? 'bg-green-600/30 text-green-400' : 'bg-slate-900 text-white/70'}`}>
+          <span className={`font-black text-xl md:text-2xl leading-none ${task.status === 'Completed' ? 'text-green-400' : 'text-white'}`}>
             {formatTime(task.start)}
           </span>
           <span className="text-[10px] md:text-xs font-black opacity-60 uppercase mt-1">START</span>
@@ -166,11 +192,16 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-900 text-white/50 uppercase">
+            <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-900 text-white/50'}`}>
               {task.type}
             </span>
+            {task.estimatedPrice && (
+              <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600/20 text-green-300' : 'bg-blue-600/20 text-blue-400'}`}>
+                {task.estimatedPrice.toLocaleString()} Kč
+              </span>
+            )}
           </div>
-          <h3 className="font-black text-slate-100 text-base md:text-2xl leading-tight">{task.title}</h3>
+          <h3 className={`font-black text-base md:text-2xl leading-tight ${task.status === 'Completed' ? 'text-green-400' : 'text-slate-100'}`}>{task.title}</h3>
           <p className="text-xs md:text-sm text-white/70 font-bold mt-1 uppercase tracking-tight">{task.customer}</p>
         </div>
 
@@ -186,14 +217,14 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/10">
         <button 
           onClick={(e) => { e.stopPropagation(); handleOpenMaps(task.from); }}
-          className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 text-blue-400 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border border-white/10"
+          className={`flex items-center justify-center gap-2 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border ${task.status === 'Completed' ? 'bg-green-900/30 text-green-400 border-green-500/20 hover:bg-green-800/30' : 'bg-slate-900 hover:bg-slate-700 text-blue-400 border-white/10'}`}
         >
           <Icons.Map className="w-3 h-3" />
           Nakládka
         </button>
         <button 
           onClick={(e) => { e.stopPropagation(); handleOpenMaps(task.to); }}
-          className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 text-blue-400 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border border-white/10"
+          className={`flex items-center justify-center gap-2 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border ${task.status === 'Completed' ? 'bg-green-900/30 text-green-400 border-green-500/20 hover:bg-green-800/30' : 'bg-slate-900 hover:bg-slate-700 text-blue-400 border-white/10'}`}
         >
           <Icons.Map className="w-3 h-3" />
           Vykládka
@@ -201,7 +232,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
         <button 
           onClick={(e) => { e.stopPropagation(); if (task.customerPhone) window.open(`tel:${task.customerPhone}`); }}
           disabled={!task.customerPhone}
-          className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 text-green-400 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border border-white/10 disabled:opacity-30"
+          className={`flex items-center justify-center gap-2 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border disabled:opacity-30 ${task.status === 'Completed' ? 'bg-green-900/30 text-green-400 border-green-500/20 hover:bg-green-800/30' : 'bg-slate-900 hover:bg-slate-700 text-green-400 border-white/10'}`}
         >
           <Icons.Phone className="w-3 h-3" />
           Volat
@@ -210,7 +241,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
           <select 
             value={task.status}
             onChange={(e) => { e.stopPropagation(); updateTaskStatus(task.id, e.target.value as any); }}
-            className="w-full bg-slate-900 hover:bg-slate-700 text-slate-300 p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border border-white/10 outline-none appearance-none text-center"
+            className={`w-full p-3 rounded-xl transition-colors text-[10px] font-black uppercase tracking-widest border outline-none appearance-none text-center ${task.status === 'Completed' ? 'bg-green-600 text-white border-green-500' : 'bg-slate-900 hover:bg-slate-700 text-slate-300 border-white/10'}`}
           >
             <option value="Pending">Čeká</option>
             <option value="Confirmed">Potvrzeno</option>
@@ -224,6 +255,49 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
 
   return (
     <div className="space-y-10">
+      {myActiveTask && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-orange-600 p-6 md:p-10 rounded-[3rem] shadow-[0_20px_50px_rgba(249,115,22,0.3)] border border-orange-400/30 relative overflow-hidden group cursor-pointer"
+          onClick={() => setSelectedTask(myActiveTask)}
+        >
+          <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none transform group-hover:scale-110 transition-transform duration-500">
+            <Icons.Zap className="w-20 h-20" />
+          </div>
+          
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_#fff]" />
+                <span className="text-[10px] md:text-sm font-black text-white uppercase tracking-[0.2em]">Aktuálně na zakázce</span>
+              </div>
+              <h2 className="text-2xl md:text-5xl font-black text-white tracking-tighter leading-none pr-4">
+                {myActiveTask.title}
+              </h2>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10">
+                  {myActiveTask.type}
+                </span>
+                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10">
+                  📍 {myActiveTask.from.split(',')[0]}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4 bg-black/20 p-4 md:p-6 rounded-[2rem] border border-white/5 backdrop-blur-xl">
+              <div className="text-right">
+                <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest leading-none mb-1">Cílové místo</p>
+                <p className="text-xs md:text-lg font-black text-white uppercase truncate max-w-[150px] md:max-w-xs">{myActiveTask.to.split(',')[0]}</p>
+              </div>
+              <div className="w-10 h-10 md:w-16 md:h-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl">
+                <Icons.Map className="w-5 h-5 md:w-8 md:h-8 text-orange-600" />
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 md:gap-8">
         <StartCard 
           label="Tvůj dnešní start" 
@@ -256,35 +330,72 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
         </section>
       )}
 
-      {user.role === 'admin' && firstTaskTomorrowGlobal && (
-        <section className="bg-blue-600/10 border border-blue-500/20 rounded-[3rem] p-6 md:p-10 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none transform scale-150">
-            <Icons.Sparkles />
+      {firstTaskTomorrowGlobal && (
+        <section className="bg-slate-800 p-6 md:p-10 rounded-[3rem] border border-blue-500/20 relative overflow-hidden shadow-2xl">
+          <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none transform scale-150">
+            <Icons.Calendar className="w-40 h-40" />
           </div>
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-4 md:mb-6">
-               <span className="w-2 h-2 md:w-3 md:h-3 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa]" />
-               <h2 className="text-[10px] md:text-sm font-black text-blue-400 uppercase tracking-widest">Zítřejší ranní start (Firma)</h2>
+
+          <div className="relative z-10 space-y-8">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa] animate-pulse" />
+                <h2 className="text-[10px] md:text-xs font-black text-blue-400 uppercase tracking-[0.2em]">První zítřejší mise</h2>
+              </div>
+              <div className="flex items-center gap-3">
+                {firstTaskTomorrowGlobal.estimatedPrice && (
+                  <span className="text-[10px] font-black px-4 py-1.5 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/20 uppercase tracking-widest">
+                    {firstTaskTomorrowGlobal.estimatedPrice.toLocaleString()} Kč
+                  </span>
+                )}
+                <span className="text-[10px] font-black px-4 py-1.5 rounded-full bg-blue-600 text-white uppercase tracking-widest shadow-lg shadow-blue-600/20">
+                  {firstTaskTomorrowGlobal.type}
+                </span>
+              </div>
             </div>
-            <div className="flex items-end justify-between">
-               <div>
-                  <p className="text-2xl md:text-5xl font-black text-white tracking-tighter">{formatTime(firstTaskTomorrowGlobal.start)}</p>
-                  <p className="text-xs md:text-lg font-bold text-slate-400 uppercase truncate max-w-[180px] md:max-w-md mt-1">{firstTaskTomorrowGlobal.title}</p>
-               </div>
-               <div className="flex gap-2 md:gap-4">
-                  <button 
-                    onClick={() => sendNotification('sms', firstTaskTomorrowGlobal)}
-                    className="p-4 md:p-6 bg-slate-800 text-white rounded-2xl border border-slate-700 hover:bg-slate-700 transition-all shadow-lg active:scale-90"
-                  >
-                    <div className="md:scale-125"><Icons.Message /></div>
-                  </button>
-                  <button 
-                    onClick={() => sendNotification('whatsapp', firstTaskTomorrowGlobal)}
-                    className="p-4 md:p-6 bg-green-600 text-white rounded-2xl border border-green-500 hover:bg-green-500 transition-all shadow-lg shadow-green-600/20 active:scale-90"
-                  >
-                    <div className="md:scale-125"><Icons.WhatsApp /></div>
-                  </button>
-               </div>
+
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+              <div>
+                <p className="text-4xl md:text-7xl font-black text-white tracking-tighter leading-none mb-2">
+                  {formatTime(firstTaskTomorrowGlobal.start)}
+                </p>
+                <p className="text-xl md:text-2xl font-black text-slate-100 uppercase tracking-tight">{firstTaskTomorrowGlobal.title}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 max-w-xl">
+                <div className="bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Nakládka</p>
+                  <p className="text-xs text-white font-bold leading-tight">{firstTaskTomorrowGlobal.from}</p>
+                </div>
+                <div className="bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+                  <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest mb-1">Vykládka</p>
+                  <p className="text-xs text-white font-bold leading-tight">{firstTaskTomorrowGlobal.to}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-white/5 space-y-4">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Přiřazený tým na zítra</p>
+              <div className="flex flex-wrap gap-2">
+                {firstTaskTomorrowGlobal.assignedWorkers.map(wid => {
+                  const worker = workers.find(w => w.id === wid);
+                  if (!worker) return null;
+                  return (
+                    <div key={wid} className="flex items-center gap-3 bg-slate-900/80 p-2 pr-4 rounded-2xl border border-white/5 group hover:border-blue-500/30 transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-slate-800 overflow-hidden flex items-center justify-center text-blue-400">
+                        {worker.photo ? <img src={worker.photo} className="w-full h-full object-cover" /> : <Icons.User className="w-4 h-4" />}
+                      </div>
+                      <span className="text-xs font-black text-white">{worker.name}</span>
+                      <a 
+                        href={`tel:${worker.phone.replace(/\s+/g, '')}`}
+                        className="p-2 bg-slate-800 text-green-400 rounded-lg hover:bg-green-600 hover:text-white transition-all shadow-md"
+                      >
+                        <Icons.Phone className="w-3 h-3" />
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </section>
@@ -345,11 +456,16 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
                     selectedTask.status === 'In Progress' ? 'bg-red-600' : 
                     selectedTask.status === 'Completed' ? 'bg-green-600' : 'bg-slate-600'
                   }`}>
-                    {selectedTask.status}
+                    {getStatusLabel(selectedTask.status)}
                   </span>
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-slate-800 text-slate-400 rounded-lg inline-block">
                     {selectedTask.type}
                   </span>
+                  {selectedTask.estimatedPrice && (
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-blue-600/20 text-blue-400 rounded-lg inline-block">
+                      {selectedTask.estimatedPrice.toLocaleString()} Kč
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-3xl md:text-4xl font-black text-white tracking-tighter leading-tight">{selectedTask.title}</h3>
               </div>
@@ -432,12 +548,27 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user })
                 </div>
               )}
 
-              <button 
-                onClick={() => setSelectedTask(null)}
-                className="w-full bg-blue-600 text-white font-black py-5 rounded-[2rem] shadow-xl shadow-blue-600/20 transition-all active:scale-95 text-sm uppercase tracking-widest hover:bg-blue-500"
-              >
-                Zavřít detail
-              </button>
+              <div className="flex flex-col gap-3">
+                {(user.role === 'admin' || (user.workerId && selectedTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && selectedTask.status !== 'Completed' && (
+                  <button 
+                    onClick={async () => {
+                      await updateTaskStatus(selectedTask.id, 'Completed');
+                      setSelectedTask({...selectedTask, status: 'Completed'});
+                      showToast("Zakázka byla dokončena! 🎉");
+                    }}
+                    className="w-full bg-green-600 text-white font-black py-5 rounded-[2rem] shadow-xl shadow-green-600/20 transition-all active:scale-95 text-sm uppercase tracking-widest hover:bg-green-500 flex items-center justify-center gap-2 animate-bounce-subtle"
+                  >
+                    <Icons.Check className="w-5 h-5" /> Dokončit zakázku (Hotovo)
+                  </button>
+                )}
+                
+                <button 
+                  onClick={() => setSelectedTask(null)}
+                  className="w-full bg-slate-800 text-white font-black py-5 rounded-[2rem] shadow-xl border border-slate-700 transition-all active:scale-95 text-sm uppercase tracking-widest hover:bg-slate-700"
+                >
+                  Zavřít detail
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

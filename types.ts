@@ -4,7 +4,7 @@ export interface Worker {
   name: string;
   email?: string; // Pro párování s Google účtem
   phone: string;
-  role: 'Driver' | 'Loader' | 'Specialist';
+  role: 'Driver' | 'Loader' | 'Boss';
   status: 'Available' | 'On Task' | 'Off';
   photo?: string;
   licenseInfo?: string;
@@ -22,6 +22,7 @@ export interface Vehicle {
   insuranceInfo?: string;
   carImage?: string;
   techCertImage?: string;
+  assistancePhone?: string;
   // Tire info
   tireSize?: string;
   tireType?: 'Summer' | 'Winter' | 'All-season';
@@ -43,6 +44,7 @@ export interface MoveTask {
   type: string; // Druh zakázky
   priority: 'Low' | 'Medium' | 'High' | 'Critical'; // Řídící stupeň
   notes?: string;
+  estimatedPrice?: number;
   images?: string[];
 }
 
@@ -58,10 +60,40 @@ export interface Transaction {
   userName: string;
 }
 
+export interface CompanySettings {
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  taxId?: string; // IČO
+  vatId?: string; // DIČ
+  website?: string;
+  logoUrl?: string;
+}
+
+export interface MaintenanceRequest {
+  id: string;
+  reason: string;
+  userId: string;
+  userName: string;
+  createdAt: Date;
+  status: 'Pending' | 'Resolved';
+}
+
 export enum AppTab {
   DASHBOARD = 'dashboard',
   CALENDAR = 'calendar',
   FLEET = 'fleet',
-  AI_LAB = 'ai_lab',
+  MAINTENANCE = 'maintenance',
+  ANALYSIS = 'analysis',
   PROFILE = 'profile'
+}
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
 }

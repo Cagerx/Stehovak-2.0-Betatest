@@ -74,9 +74,43 @@
         "notes": { "type": "string" }
       },
       "required": ["id", "title", "customer", "start", "end", "status"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Represents company information settings.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "taxId": { "type": "string" },
+        "vatId": { "type": "string" },
+        "website": { "type": "string" },
+        "logoUrl": { "type": "string" }
+      },
+      "required": ["name", "address", "phone", "email"]
+    },
+    "MaintenanceRequest": {
+      "title": "MaintenanceRequest",
+      "description": "Represents a maintenance request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "reason": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "reason", "userId", "userName", "createdAt", "status"]
     }
   },
   "firestore": {
+    "/settings/company": {
+      "schema": { "$ref": "CompanySettings" },
+      "description": "Company information document."
+    },
     "/tasks/{taskId}": {
       "schema": { "$ref": "MoveTask" },
       "description": "Collection of moving tasks."
@@ -92,6 +126,10 @@
     "/transactions/{transactionId}": {
       "schema": { "$ref": "Transaction" },
       "description": "Collection of financial transactions."
+    },
+    "/maintenanceRequests/{requestId}": {
+      "schema": { "$ref": "MaintenanceRequest" },
+      "description": "Collection of maintenance requests."
     }
   }
 }

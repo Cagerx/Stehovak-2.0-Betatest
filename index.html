@@ -41,6 +41,14 @@
           animation: fadeIn 0.3s ease-out;
         }
 
+        @keyframes bounceSubtle {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-3px); }
+        }
+        .animate-bounce-subtle {
+          animation: bounceSubtle 2s infinite ease-in-out;
+        }
+
         /* Modern focus rings */
         input:focus, select:focus, textarea:focus {
           outline: none;

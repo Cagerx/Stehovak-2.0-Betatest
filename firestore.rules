@@ -167,6 +167,28 @@ service cloud.firestore {
              isValidString(data.userName, 1, 100);
     }
 
+    function isValidCompanySettings(data) {
+      return hasRequiredFields(['name', 'address', 'phone', 'email']) &&
+             isValidString(data.name, 1, 200) &&
+             isValidString(data.address, 1, 500) &&
+             isValidString(data.phone, 1, 50) &&
+             isValidEmail(data.email) &&
+             (!('taxId' in data) || isValidString(data.taxId, 0, 50)) &&
+             (!('vatId' in data) || isValidString(data.vatId, 0, 50)) &&
+             (!('website' in data) || (data.website is string && data.website.size() < 200)) &&
+             (!('logoUrl' in data) || (isValidUrl(data.logoUrl) && data.logoUrl.size() < 1000));
+    }
+
+    function isValidMaintenanceRequest(data) {
+      return hasRequiredFields(['id', 'reason', 'userId', 'userName', 'createdAt', 'status']) &&
+             isValidString(data.id, 1, 50) &&
+             isValidString(data.reason, 1, 2500) &&
+             isValidString(data.userId, 1, 128) &&
+             isValidString(data.userName, 1, 200) &&
+             data.createdAt is timestamp &&
+             data.status in ['Pending', 'Resolved'];
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -176,8 +198,27 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /settings/company {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidCompanySettings(request.resource.data);
+    }
+
     match /test/connection {
       allow read: if true;
+    }
+
+    match /maintenanceRequests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                      isValidMaintenanceRequest(request.resource.data) &&
+                      request.resource.data.userId == request.auth.uid &&
+                      request.resource.data.status == 'Pending' &&
+                      request.resource.data.createdAt == request.time;
+      allow update: if isAdmin() && 
+                      isValidMaintenanceRequest(request.resource.data) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+                      request.resource.data.status in ['Pending', 'Resolved'];
+      allow delete: if isAdmin();
     }
 
     match /users/{userId} {

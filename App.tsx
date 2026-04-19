@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AppTab, Worker, Vehicle, MoveTask, Transaction } from './types';
+import { AppTab, Worker, Vehicle, MoveTask, Transaction, CompanySettings, MaintenanceRequest, OperationType } from './types';
 import { Icons, COLORS } from './constants';
 import Dashboard from './components/Dashboard';
 import CalendarView from './components/CalendarView';
 import FleetView from './components/FleetView';
+import MaintenanceView from './components/MaintenanceView';
+import OrderAnalysis from './components/OrderAnalysis';
 import AILab from './components/AILab';
 import Profile from './components/Profile';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -14,15 +16,6 @@ import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore'
 import { signInWithPopup, onAuthStateChanged, signOut, GoogleAuthProvider } from 'firebase/auth';
 
 // Error handling
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
 interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
@@ -36,6 +29,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
                   errorMessage.toLowerCase().includes('cancel') ||
                   errorMessage.toLowerCase().includes('the user aborted a request') ||
                   errorMessage.toLowerCase().includes('signal is aborted') ||
+                  errorMessage.toLowerCase().includes('failed to fetch') ||
                   (error as any)?.name === 'AbortError';
 
   if (isAbort) return true; // Silent return for aborted requests
@@ -99,6 +93,12 @@ const LOGO_URL = "/logo.png";
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.DASHBOARD);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
   const [user, setUser] = useState<AppUser | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   
@@ -111,6 +111,8 @@ const App: React.FC = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tasks, setTasks] = useState<MoveTask[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(localStorage.getItem('google_access_token'));
   const [isAutoRegistering, setIsAutoRegistering] = useState(false);
@@ -161,11 +163,13 @@ const App: React.FC = () => {
             const newWorker: any = {
               id: newWorkerId,
               name: firebaseUser.displayName || 'Nový člen týmu',
-              email: email || '',
               phone: '',
               role: 'Loader',
               status: 'Available'
             };
+            if (email) {
+              newWorker.email = email;
+            }
             if (firebaseUser.photoURL) {
               newWorker.photo = firebaseUser.photoURL;
             }
@@ -280,11 +284,31 @@ const App: React.FC = () => {
       setTransactions(txData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'transactions'));
 
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'company'), (docSnap) => {
+      if (docSnap.exists()) {
+        setCompanySettings(docSnap.data() as CompanySettings);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/company'));
+
+    const unsubMaintenance = onSnapshot(collection(db, 'maintenanceRequests'), (snapshot) => {
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          ...d,
+          id: doc.id,
+          createdAt: d.createdAt?.toDate ? d.createdAt.toDate() : new Date(d.createdAt)
+        } as MaintenanceRequest;
+      });
+      setMaintenanceRequests(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'maintenanceRequests'));
+
     return () => {
       unsubTasks();
       unsubWorkers();
       unsubVehicles();
       unsubTransactions();
+      unsubSettings();
+      unsubMaintenance();
     };
   }, [user?.id, isAuthReady]);
 
@@ -326,7 +350,8 @@ const App: React.FC = () => {
                       errorMessage.includes('aborted') ||
                       errorMessage.includes('cancel') ||
                       errorMessage.includes('the user aborted a request') ||
-                      errorMessage.includes('signal is aborted');
+                      errorMessage.includes('signal is aborted') ||
+                      errorMessage.includes('failed to fetch');
 
       if (isAbort) {
         // User closed the popup or request was cancelled, no need to show a scary error
@@ -352,7 +377,8 @@ const App: React.FC = () => {
       case AppTab.DASHBOARD: return 'PŘEHLED';
       case AppTab.CALENDAR: return 'KALENDÁŘ';
       case AppTab.FLEET: return 'FLOTILA';
-      case AppTab.AI_LAB: return 'AI LABORATOŘ';
+      case AppTab.MAINTENANCE: return 'ÚDRŽBA';
+      case AppTab.ANALYSIS: return 'ANALÝZA';
       case AppTab.PROFILE: return 'VÍCE';
       default: return '';
     }
@@ -553,6 +579,20 @@ const App: React.FC = () => {
         </div>
       )}
 
+      <AnimatePresence>
+        {toast && (
+          <motion.div 
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 100 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="fixed top-0 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-8 py-4 rounded-3xl font-black uppercase text-xs tracking-[0.2em] shadow-[0_20px_50px_rgba(22,163,74,0.4)] flex items-center gap-3 border border-green-400/30"
+          >
+            <Icons.Sparkles className="w-5 h-5" />
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main className="flex-1 overflow-y-auto no-scrollbar p-5 md:p-10 pb-32 md:pb-40">
         <AnimatePresence mode="wait">
           <motion.div
@@ -562,10 +602,32 @@ const App: React.FC = () => {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === AppTab.DASHBOARD && <Dashboard tasks={tasks} workers={workers} vehicles={vehicles} user={user} />}
-            {activeTab === AppTab.CALENDAR && <CalendarView tasks={tasks} setTasks={setTasks} workers={workers} vehicles={vehicles} user={user} googleAccessToken={googleAccessToken} />}
-            {activeTab === AppTab.FLEET && <FleetView workers={workers} setWorkers={setWorkers} vehicles={vehicles} setVehicles={setVehicles} user={user} />}
-            {activeTab === AppTab.AI_LAB && <AILab user={user} />}
+            {activeTab === AppTab.DASHBOARD && <Dashboard tasks={tasks} workers={workers} vehicles={vehicles} user={user} showToast={showToast} />}
+            {activeTab === AppTab.CALENDAR && <CalendarView tasks={tasks} setTasks={setTasks} workers={workers} vehicles={vehicles} user={user} googleAccessToken={googleAccessToken} showToast={showToast} />}
+            {activeTab === AppTab.FLEET && (
+              <FleetView 
+                workers={workers} 
+                setWorkers={setWorkers} 
+                vehicles={vehicles} 
+                setVehicles={setVehicles} 
+                tasks={tasks}
+                user={user} 
+                showToast={showToast} 
+              />
+            )}
+            {activeTab === AppTab.MAINTENANCE && (
+              <MaintenanceView 
+                maintenanceRequests={maintenanceRequests}
+                user={user!}
+                showToast={showToast}
+              />
+            )}
+            {activeTab === AppTab.ANALYSIS && (
+              <OrderAnalysis 
+                tasks={tasks}
+                transactions={transactions}
+              />
+            )}
             {activeTab === AppTab.PROFILE && (
               <Profile 
                 user={user} 
@@ -576,6 +638,8 @@ const App: React.FC = () => {
                 workers={workers}
                 vehicles={vehicles}
                 googleAccessToken={googleAccessToken}
+                showToast={showToast}
+                companySettings={companySettings}
               />
             )}
           </motion.div>
@@ -586,7 +650,14 @@ const App: React.FC = () => {
         <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Icons.Home />} label="Domů" />
         <NavButton active={activeTab === AppTab.CALENDAR} onClick={() => setActiveTab(AppTab.CALENDAR)} icon={<Icons.Calendar />} label="Kalendář" />
         <NavButton active={activeTab === AppTab.FLEET} onClick={() => setActiveTab(AppTab.FLEET)} icon={<Icons.Truck />} label="Flotila" />
-        <NavButton active={activeTab === AppTab.AI_LAB} onClick={() => setActiveTab(AppTab.AI_LAB)} icon={<Icons.Sparkles />} label="AI Lab" />
+        <NavButton 
+          active={activeTab === AppTab.ANALYSIS} 
+          onClick={() => setActiveTab(AppTab.ANALYSIS)} 
+          icon={<Icons.Sparkles />} 
+          label="Analýza" 
+          disabled={user?.role !== 'admin'}
+        />
+        <NavButton active={activeTab === AppTab.MAINTENANCE} onClick={() => setActiveTab(AppTab.MAINTENANCE)} icon={<Icons.Settings />} label="Údržba" />
         <NavButton active={activeTab === AppTab.PROFILE} onClick={() => setActiveTab(AppTab.PROFILE)} icon={<Icons.User />} label="Více" />
       </nav>
     </div>
@@ -599,21 +670,22 @@ interface NavButtonProps {
   onClick: () => void;
   icon: React.ReactNode;
   label: string;
+  disabled?: boolean;
 }
 
-const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label }) => (
+const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label, disabled }) => (
   <button 
-    onClick={onClick}
-    className="flex flex-col items-center justify-center gap-1.5 md:gap-2 transition-all relative group"
+    onClick={disabled ? undefined : onClick}
+    className={`flex flex-col items-center justify-center gap-1.5 md:gap-2 transition-all relative group ${disabled ? 'cursor-not-allowed' : ''}`}
   >
     <div className={`transition-all duration-300 [&>svg]:w-6 [&>svg]:h-6 md:[&>svg]:w-8 md:[&>svg]:h-8 ${
       active 
         ? (label === 'AI Lab' ? 'scale-110 -translate-y-1 text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'scale-110 -translate-y-1 text-white') 
-        : 'scale-100 text-white/40 group-hover:text-white'
+        : `scale-100 ${disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white'}`
     }`}>
       {icon}
     </div>
-    <span className={`text-[10px] md:text-xs font-black uppercase tracking-wider transition-all duration-300 ${active ? 'opacity-100 text-white' : 'opacity-100 text-white/40 group-hover:text-white'}`}>
+    <span className={`text-[10px] md:text-xs font-black uppercase tracking-wider transition-all duration-300 ${active ? 'opacity-100 text-white' : `opacity-100 ${disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white'}`}`}>
       {label}
     </span>
     {active && (
@@ -621,6 +693,11 @@ const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label }) =
         layoutId="nav-active"
         className="absolute -bottom-2 w-1 h-1 bg-white rounded-full"
       />
+    )}
+    {disabled && (
+      <div className="absolute bottom-full mb-4 opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 text-white text-[8px] font-black uppercase py-1.5 px-3 rounded-lg pointer-events-none whitespace-nowrap shadow-xl z-50">
+        Nemáte dostatečná oprávnění.
+      </div>
     )}
   </button>
 );

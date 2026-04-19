@@ -12,6 +12,7 @@ const handleAIError = (error: any): string | null => {
                   errorMessage.includes('signal is aborted') ||
                   errorMessage.includes('user aborted') ||
                   errorMessage.includes('cancel') ||
+                  errorMessage.includes('failed to fetch') ||
                   errorMessage.includes('request was cancelled');
   
   if (isAbort) {
@@ -53,6 +54,7 @@ export const geminiService = {
     customerPhone?: string;
     from?: string;
     to?: string;
+    estimatedPrice?: number;
   }> {
     try {
       const response = await ai.models.generateContent({
@@ -67,11 +69,12 @@ export const geminiService = {
         2. **customerPhone**: Najdi telefonní číslo. Pokud je to české číslo, zformátuj ho s mezerami (např. +420 777 888 999).
         3. **from**: Adresa NAKLÁDKY (start). Hledej klíčová slova: "z:", "odkud:", "nakládka:", "adresa 1", "byt A".
         4. **to**: Adresa VYKLÁDKY (cíl). Hledej klíčová slova: "do:", "kam:", "vykládka:", "adresa 2", "byt B".
-        5. **title**: Vytvoř stručný název zakázky. 
+        5. **estimatedPrice**: Najdi odhadovanou cenu. Hledej čísla následovaná "Kč", "korun" nebo "cena". Vrať pouze čisté číslo.
+        6. **title**: Vytvoř stručný název zakázky. 
            - Pokud jsou známa města, použij formát: "Stěhování: [Město Odkud] -> [Město Kam]".
            - Jinak použij předmět stěhování, např. "Převoz gauče", "Stěhování 2+kk".
         
-        Pokud některý údaj v textu chybí, vrať pro daný klíč prázdný řetězec.`,
+        Pokud některý údaj v textu chybí, vrať pro daný klíč prázdný řetězec nebo null pro cenu.`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
@@ -81,7 +84,8 @@ export const geminiService = {
               customer: { type: Type.STRING },
               customerPhone: { type: Type.STRING },
               from: { type: Type.STRING },
-              to: { type: Type.STRING }
+              to: { type: Type.STRING },
+              estimatedPrice: { type: Type.NUMBER }
             }
           }
         },
@@ -109,7 +113,7 @@ export const geminiService = {
         contents: {
           parts: [
             { inlineData: { data: base64Audio, mimeType: mimeType } },
-            { text: "Přepiš tuto zvukovou nahrávku do textu. Pouze čistý text, žádné úvodní fráze." }
+            { text: "Přepiš tuto zvukovou nahrávku do textu. JAZYK JE ČEŠTINA. Pouze čistý přepis, žádné úvodní fráze." }
           ]
         },
       });
@@ -196,6 +200,7 @@ export const geminiService = {
     from?: string;
     to?: string;
     notes?: string;
+    estimatedPrice?: number;
   }> {
     try {
       const response = await ai.models.generateContent({
@@ -210,8 +215,9 @@ export const geminiService = {
             2. Telefonní číslo (customerPhone)
             3. Adresu odkud (from)
             4. Adresu kam (to)
-            5. Stručný název akce (title)
-            6. Jakékoliv další důležité detaily (notes)
+            5. Odhadovanou cenu (estimatedPrice) - pouze číslo
+            6. Stručný název akce (title)
+            7. Jakékoliv další důležité detaily (notes)
             
             Odpověz v JSON formátu.` }
           ]
@@ -226,7 +232,8 @@ export const geminiService = {
               customerPhone: { type: Type.STRING },
               from: { type: Type.STRING },
               to: { type: Type.STRING },
-              notes: { type: Type.STRING }
+              notes: { type: Type.STRING },
+              estimatedPrice: { type: Type.NUMBER }
             }
           }
         }

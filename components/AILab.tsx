@@ -5,8 +5,8 @@ import { geminiService } from '../services/geminiService';
 import { Icons } from '../constants';
 import { db } from '../firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
-import { handleFirestoreError, OperationType } from '../App';
-import { MoveTask } from '../types';
+import { handleFirestoreError } from '../App';
+import { MoveTask, OperationType } from '../types';
 
 // Helper functions for Audio
 function decode(base64: string) {
@@ -43,9 +43,10 @@ interface AILabProps {
     workerId?: string;
     role: 'admin' | 'user';
   };
+  showToast: (message: string) => void;
 }
 
-const AILab: React.FC<AILabProps> = ({ user }) => {
+const AILab: React.FC<AILabProps> = ({ user, showToast }) => {
   const [activeTool, setActiveTool] = useState<'thinking' | 'fast_chat' | 'vision' | 'generation' | 'maps' | 'edit' | 'seed' | 'story' | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -98,6 +99,49 @@ const AILab: React.FC<AILabProps> = ({ user }) => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+  };
+
+  // --- NATIVE SPEECH RECOGNITION (STT) for Czech ---
+  const startNativeSTT = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Rozpoznávání řeči není v tomto prohlížeči podporováno.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'cs-CZ';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    recognition.onerror = () => setIsRecording(false);
+    
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((res: any) => res[0].transcript)
+        .join('');
+      if (event.results[0].isFinal && isMounted.current) {
+        setInput(prev => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+
+    recognition.start();
+  };
+
+  const handleSTTClick = () => {
+    if (isRecording) {
+      handleStopRecording();
+    } else {
+      // Prefer Native STT for speed and interim results, fallback to Gemini Transcription
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        startNativeSTT();
+      } else {
+        handleStartRecording();
+      }
     }
   };
 
@@ -228,6 +272,7 @@ const AILab: React.FC<AILabProps> = ({ user }) => {
 
         await addDoc(collection(db, 'tasks'), task1);
         await addDoc(collection(db, 'tasks'), task2);
+        showToast("Testovací data vytvořena");
         if (isMounted.current) setResult("Fiktivní zakázky byly úspěšně vytvořeny a přiřazeny k vašemu profilu.");
       } else if (activeTool === 'fast_chat') {
         const res = await geminiService.chatFast(input);
@@ -417,9 +462,9 @@ const AILab: React.FC<AILabProps> = ({ user }) => {
             className="w-full bg-slate-900 border-none rounded-2xl p-5 pr-14 min-h-[140px] focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-100 placeholder-slate-600"
           />
           <button 
-            onClick={isRecording ? handleStopRecording : handleStartRecording}
+            onClick={handleSTTClick}
             className={`absolute right-4 top-4 p-3 rounded-xl transition-all ${isRecording ? 'bg-red-600 text-white animate-pulse shadow-[0_0_15px_#dc2626]' : 'bg-slate-800 text-slate-500 hover:text-white'}`}
-            title={isRecording ? "Zastavit nahrávání" : "Nahrát dotaz"}
+            title={isRecording ? "Zastavit diktování" : "Diktovat česky"}
           >
              {isRecording ? <Icons.StopCircle /> : (
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
