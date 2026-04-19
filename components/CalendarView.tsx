@@ -523,49 +523,53 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
 
   const renderListView = () => {
     return (
-      <div className="flex-1 overflow-y-auto no-scrollbar p-5 md:p-8 space-y-4 bg-slate-900">
-        {filteredTasks.length > 0 ? filteredTasks.map(task => (
-          <div key={task.id} onClick={() => handleOpenEdit(task)} className={`rounded-3xl p-5 border transition-all cursor-pointer group ${task.status === 'Completed' ? 'bg-green-950/20 border-green-500/30 hover:border-green-500' : 'bg-slate-800 border-white/10 hover:border-blue-500'}`}>
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
-                    {task.type}
-                  </span>
+      <div className="flex-1 overflow-y-auto no-scrollbar p-5 md:p-8 bg-slate-900">
+        {filteredTasks.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredTasks.map(task => (
+              <div key={task.id} onClick={() => handleOpenEdit(task)} className={`rounded-3xl p-5 border transition-all cursor-pointer group flex flex-col ${task.status === 'Completed' ? 'bg-green-950/20 border-green-500/30 hover:border-green-500' : 'bg-slate-800 border-white/10 hover:border-blue-500'}`}>
+                <div className="flex justify-between items-start mb-3 flex-1">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                        {task.type}
+                      </span>
+                    </div>
+                    <h4 className={`text-lg font-black transition-colors ${task.status === 'Completed' ? 'text-green-400 group-hover:text-green-300' : 'text-white group-hover:text-blue-400'}`}>{task.title}</h4>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{task.customer}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-slate-300">{task.start.toLocaleDateString('cs-CZ')}</p>
+                    <p className="text-xs font-bold text-slate-500">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</p>
+                  </div>
                 </div>
-                <h4 className={`text-lg font-black transition-colors ${task.status === 'Completed' ? 'text-green-400 group-hover:text-green-300' : 'text-white group-hover:text-blue-400'}`}>{task.title}</h4>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{task.customer}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-black text-slate-300">{task.start.toLocaleDateString('cs-CZ')}</p>
-                <p className="text-xs font-bold text-slate-500">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase text-slate-400 border-t border-slate-700/50 pt-3">
-              <div className="flex items-center gap-1.5">
-                <Icons.Map className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-500' : 'text-blue-500'}`} />
-                <span className="truncate max-w-[150px]">{task.from} → {task.to}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Icons.User className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-600' : 'text-green-500'}`} />
-                <span>
-                  {task.assignedWorkers.length > 0 
-                    ? task.assignedWorkers.map(wid => workers.find(w => w.id === wid)?.name).filter(Boolean).join(', ')
-                    : 'Neobsazeno'}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${task.status === 'Completed' ? 'bg-green-500' : task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
-                <span className={task.status === 'Completed' ? 'text-green-500' : ''}>{getStatusLabel(task.status)}</span>
-              </div>
-              {task.estimatedPrice && (
-                <div className="flex items-center gap-1.5 text-blue-400 font-black ml-auto">
-                  <span>{task.estimatedPrice.toLocaleString()} Kč</span>
+                <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase text-slate-400 border-t border-slate-700/50 pt-3 mt-auto">
+                  <div className="flex items-center gap-1.5">
+                    <Icons.Map className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-500' : 'text-blue-500'}`} />
+                    <span className="truncate max-w-[150px]">{task.from} → {task.to}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Icons.User className={`w-3 h-3 ${task.status === 'Completed' ? 'text-green-600' : 'text-green-500'}`} />
+                    <span>
+                      {task.assignedWorkers.length > 0 
+                        ? task.assignedWorkers.map(wid => workers.find(w => w.id === wid)?.name).filter(Boolean).join(', ')
+                        : 'Neobsazeno'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${task.status === 'Completed' ? 'bg-green-500' : task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
+                    <span className={task.status === 'Completed' ? 'text-green-500' : ''}>{getStatusLabel(task.status)}</span>
+                  </div>
+                  {task.estimatedPrice && (
+                    <div className="flex items-center gap-1.5 text-blue-400 font-black ml-auto">
+                      <span>{task.estimatedPrice.toLocaleString()} Kč</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        )) : (
+        ) : (
           <div className="flex flex-col items-center justify-center h-full text-slate-600 py-20">
             <Icons.Sparkles className="w-12 h-12 mb-4 opacity-20" />
             <p className="font-black uppercase tracking-widest">Žádné zakázky nenalezeny</p>
@@ -750,7 +754,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       {/* Task Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-slate-900 w-full max-w-lg rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl">
+          <div className="bg-slate-900 w-full max-w-2xl rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl">
             <h3 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter">{isEditing ? 'Upravit zakázku' : 'Nová zakázka'}</h3>
             
             <div className="space-y-6">

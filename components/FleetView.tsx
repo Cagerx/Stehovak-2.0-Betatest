@@ -378,7 +378,7 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
       {/* Vehicle Modal */}
       {showVehicleModal && selectedVehicle && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-slate-900 w-full max-w-md rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
+          <div className="bg-slate-900 w-full max-w-xl rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
             <h3 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter">Detail Vozidla</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">

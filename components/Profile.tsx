@@ -511,6 +511,146 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         );
       case 'AI Laboratoř':
         return <AILab user={user} showToast={showToast} />;
+      case 'Nápověda':
+        return (
+          <div className="space-y-6">
+            <div className="bg-slate-800 p-6 rounded-3xl border border-slate-700">
+              <h4 className="text-xl font-black text-white tracking-tighter mb-2">Kompletní průvodce systémem</h4>
+              <p className="text-[10px] text-slate-400 font-bold leading-relaxed uppercase tracking-widest">
+                Stěhovák 2.0 • Jak naplno využít potenciál aplikace
+              </p>
+            </div>
+            
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto no-scrollbar pr-1 pb-4">
+              
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center text-xl">🏠</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Základna (Domů)</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Řídící panel řidiče a pracovníka</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Tato obrazovka je vaším osobním portálem. Vidíte zde jen ty zakázky, na které jste přímo přiřazeni, abyste měli vždy čistý přehled.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Dnešní & Zítřejší mise:</strong> Systém automaticky filtruje vaši bezprostředně další zakázku, abyste hned po otevření aplikace věděli, kam vyrazit.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Rychlé akce:</strong> Přímo z detailu můžete jediným tlačítkem vytočit klienta, nebo se nechat navigovat v Mapách (tlačítko Trasa).</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Změna stavu:</strong> Řidič může zakázku přepnout na „Probíhá“ při startu a „Hotovo“ na konci. Při dokončení se karta podbarví zeleně.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-green-600/20 text-green-400 flex items-center justify-center text-xl">📅</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Kalendář a Plánování</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Nástroj pro dispečera</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Srdce celého systému určené pro globální plánování. Úhledně organizuje všechny zakázky firmy v čase.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Tři pohledy:</strong> Přepínejte přes horní filtry mezi hodinovým harmonogramem (Den), týdenním přehledem křížících se úkolů (Týden) a prostým chronologickým seznamem (Seznam).</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">AI Rychlá Akce (✨):</strong> Kliknutím na jiskru můžete vytvořit zakázku pouhým nadiktováním nebo překopírováním SMS (např. "Zítra Karel stěhování z Brna do Prahy"). AI informace pochopí a vyplní formulář za vás.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Editace a Fotky:</strong> Po kliknutí na zakázku lze měnit posádku, vozidla a nahrávat štítky/fotky. Přiložené fotografie obýváku umí AI opět proskenovat a vyjmenovat obtížné kusy nábytku.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-orange-600/20 text-orange-400 flex items-center justify-center text-xl">🚚</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Flotila a Tým</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Správa firemních prostředků</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Udržujte pořádek ve vozech a sledujte vytížení vašich pracovníků.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Evidence osob:</strong> Kontakty na řidiče i montéry. Barevný status napoví, kdo je k dispozici a kdo je právě na zakázce.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Detail vozidla:</strong> Sledujte SPZ a objem nákladového prostoru. Každý vůz má jasný stav (Připraven, V provozu, V servisu).</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Asistenční služba:</strong> Pokud má vozidlo potíže na silnici, detail obsahuje ikonu "Záchranného kruhu", přes kterou okamžitě zavoláte pro dané auto asistenční službu.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-red-600/20 text-red-500 flex items-center justify-center text-xl">🛠️</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Údržba (Servisní tikety)</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Hlášení o závadách</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Zabraňte nečekaným poruchám. Kterýkoliv člen týmu může nahlásit problém.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Nové hlášení:</strong> Vyplňuje se popis (např. 'Bliká kontrolka oleje', 'Prasklé zadní světlo'). Automaticky se uloží váš čas a jméno.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Uzavření:</strong> Správce nebo mechanik může kliknutím na 'Označit za vyřešené' přesunout daný záznam do archivovaných.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-400 flex items-center justify-center text-xl">🌐</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Google a AI Integrace</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Chytré nástroje a automatizace</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Tato sekce v menu profilu otevírá aplikaci okolnímu světu a AI.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Google Synchronizace:</strong> Dovoluje připojení Google účtu, po kterém se appka začne propisovat s vaším Gmail/Google Kalendářem.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Těžba z e-mailů:</strong> Tlačítko v integracích umí prolézt maily a poptávky podle klíčových slov přesunout přímo do zakázek 'Čekající'.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">AI Laboratoř:</strong> Osobní asistent Gemini. Umí převádět nahrávky do textu, předčítat text a zkoumat detailní fotografie.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-yellow-600/20 text-yellow-400 flex items-center justify-center text-xl">💳</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Platby a Výdaje</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Kapesní pokladní kniha</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Rychlá evidence firemních točených peněz v terénu (přístupná pod vaším profilem).
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Evidence:</strong> Přidávejte platby (příjmy obdržené hotově) i výdaje (Materiál, Benzín, Parkovné). Je možné sledovat platby kartou či převodem.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Právomoci:</strong> Obyčejný pracovník vidí pouze svoje záznamy, administrátor vidí náklady celé firmy kumulativně.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Export:</strong> Veškeré útraty (včetně výpisů zakázek či posádek) lze v "Export dat" stáhnout do .CSV podoby pro účetního.</span></li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-slate-600/20 text-slate-400 flex items-center justify-center text-xl">⚙️</div>
+                  <div>
+                    <h5 className="font-black text-white uppercase text-xs tracking-widest">Můj Profil a Nastavení</h5>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Přizpůsobení a Notifikace</p>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 font-bold leading-relaxed mb-3">
+                  Kliknutím na sekci dole v menu (karta Více / Profil) naleznete všechny individuální předvolby.
+                </p>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Osobní údaje:</strong> Systém využívá váš Google profil ke spárování. Zde vidíte vaší aktuální roli (Administrátor/Uživatel) a stav ověření identity.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Notifikační hub:</strong> Upravte si detailně, z jakých zdrojů vám smí systém pípat. Můžete si zapnout zvuky a ztlumit notifikace SMS, či aktivovat "Režim klidu". Nastavení se automaticky ukládá do prohlížeče.</span></li>
+                  <li className="flex items-start gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 shrink-0" /><span className="text-[10px] text-slate-300 leading-relaxed font-medium"><strong className="text-white">Informace o firmě (Admin):</strong> Vyplňte IČO, sídlo a kontakty logistické firmy - ty slouží jako hlavička případných vygenerovaných platebních exportů.</span></li>
+                </ul>
+              </div>
+
+            </div>
+          </div>
+        );
       case 'O Aplikaci':
         return (
           <div className="space-y-6">
@@ -732,6 +872,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           label="AI Laboratoř" 
           icon="✨" 
           onClick={() => setActiveDetail('AI Laboratoř')} 
+        />
+        <SettingItem 
+          label="Nápověda" 
+          icon="❓" 
+          onClick={() => setActiveDetail('Nápověda')} 
         />
         <SettingItem 
           label="O Aplikaci" 

@@ -445,7 +445,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 100 }}
-              className="bg-slate-900 w-full max-w-lg rounded-[3rem] p-8 md:p-10 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto no-scrollbar"
+              className="bg-slate-900 w-full max-w-2xl rounded-[3rem] p-8 md:p-10 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto no-scrollbar"
               onClick={e => e.stopPropagation()}
             >
             <div className="flex justify-between items-start mb-8">

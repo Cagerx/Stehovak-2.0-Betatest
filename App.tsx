@@ -593,7 +593,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar p-5 md:p-10 pb-32 md:pb-40">
+      <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 lg:p-12 pb-32 md:pb-40 w-full max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
