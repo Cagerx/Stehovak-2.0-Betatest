@@ -22,7 +22,11 @@ import {
   AlertTriangle,
   Settings,
   Edit,
-  Check
+  Check,
+  Bell,
+  RefreshCw,
+  Download,
+  Users
 } from 'lucide-react';
 
 export const COLORS = {
@@ -61,6 +65,10 @@ export const Icons = {
   AlertTriangle: AlertTriangle,
   Settings: Settings,
   Edit: Edit,
-  Check: Check
+  Check: Check,
+  Bell: Bell,
+  RefreshCw: RefreshCw,
+  Download: Download,
+  Users: Users
 };
 

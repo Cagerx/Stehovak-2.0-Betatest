@@ -19,10 +19,10 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, showToast }) => {
   const [selectedTask, setSelectedTask] = useState<MoveTask | null>(null);
-  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const [isTabletOrDesktop, setIsTabletOrDesktop] = useState(window.innerWidth >= 768);
 
   useEffect(() => {
-    const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
+    const handleResize = () => setIsTabletOrDesktop(window.innerWidth >= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -176,33 +176,33 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.1 }}
-      className={`w-full p-5 md:p-8 rounded-[2.5rem] shadow-sm border flex flex-col gap-4 transition-all relative overflow-hidden ${
+      className={`w-full p-4 sm:p-5 md:p-8 rounded-[2.5rem] shadow-sm border flex flex-col gap-3 md:gap-4 transition-all relative overflow-hidden ${
         task.status === 'Completed' 
           ? 'bg-green-950/20 border-green-500/30 hover:border-green-500' 
           : 'bg-slate-800 border-white/10 hover:border-blue-500/30'
       }`}
     >
-      <div className="flex items-center gap-5 md:gap-8 cursor-pointer" onClick={() => setSelectedTask(task)}>
-        <div className={`flex flex-col items-center justify-center rounded-[2rem] p-4 md:p-6 min-w-[75px] md:min-w-[100px] ${task.status === 'Completed' ? 'bg-green-600/30 text-green-400' : 'bg-slate-900 text-white/70'}`}>
+      <div className="flex items-center gap-3 md:gap-8 cursor-pointer" onClick={() => setSelectedTask(task)}>
+        <div className={`flex flex-col items-center justify-center rounded-[2rem] p-3 md:p-6 min-w-[65px] md:min-w-[100px] shrink-0 ${task.status === 'Completed' ? 'bg-green-600/30 text-green-400' : 'bg-slate-900 text-white/70'}`}>
           <span className={`font-black text-xl md:text-2xl leading-none ${task.status === 'Completed' ? 'text-green-400' : 'text-white'}`}>
             {formatTime(task.start)}
           </span>
-          <span className="text-[10px] md:text-xs font-black opacity-60 uppercase mt-1">START</span>
+          <span className="text-[8px] md:text-[10px] font-black opacity-60 uppercase mt-1">ZAČÁTEK</span>
         </div>
         
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-900 text-white/50'}`}>
+          <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mb-1">
+            <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase truncate max-w-full ${task.status === 'Completed' ? 'bg-green-600 text-white' : 'bg-slate-900 text-white/50'}`}>
               {task.type}
             </span>
             {task.estimatedPrice && (
-              <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${task.status === 'Completed' ? 'bg-green-600/20 text-green-300' : 'bg-blue-600/20 text-blue-400'}`}>
+              <span className={`text-[8px] md:text-[10px] font-black px-2 py-0.5 rounded-full uppercase whitespace-nowrap ${task.status === 'Completed' ? 'bg-green-600/20 text-green-300' : 'bg-blue-600/20 text-blue-400'}`}>
                 {task.estimatedPrice.toLocaleString()} Kč
               </span>
             )}
           </div>
-          <h3 className={`font-black text-base md:text-2xl leading-tight ${task.status === 'Completed' ? 'text-green-400' : 'text-slate-100'}`}>{task.title}</h3>
-          <p className="text-xs md:text-sm text-white/70 font-bold mt-1 uppercase tracking-tight">{task.customer}</p>
+          <h3 className={`font-black text-base md:text-2xl leading-tight truncate ${task.status === 'Completed' ? 'text-green-400' : 'text-slate-100'}`}>{task.title}</h3>
+          <p className="text-[10px] md:text-sm text-white/70 font-bold mt-0.5 uppercase tracking-tight truncate">{task.customer}</p>
         </div>
 
         <div className="flex flex-col items-end gap-2">
@@ -266,31 +266,31 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
             <Icons.Zap className="w-20 h-20" />
           </div>
           
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-            <div className="space-y-2">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6 relative z-10">
+            <div className="space-y-2 min-w-0">
               <div className="flex items-center gap-3">
                 <div className="w-2 h-2 bg-white rounded-full animate-pulse shadow-[0_0_10px_#fff]" />
                 <span className="text-[10px] md:text-sm font-black text-white uppercase tracking-[0.2em]">Aktuálně na zakázce</span>
               </div>
-              <h2 className="text-2xl md:text-5xl font-black text-white tracking-tighter leading-none pr-4">
+              <h2 className="text-xl sm:text-2xl md:text-5xl font-black text-white tracking-tighter leading-none pr-4 truncate">
                 {myActiveTask.title}
               </h2>
               <div className="flex flex-wrap gap-2 mt-2">
-                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10">
+                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10 truncate max-w-full">
                   {myActiveTask.type}
                 </span>
-                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10">
+                <span className="bg-white/20 px-3 py-1 rounded-full text-[10px] font-black text-white uppercase tracking-wider backdrop-blur-md border border-white/10 truncate max-w-full">
                   📍 {myActiveTask.from.split(',')[0]}
                 </span>
               </div>
             </div>
             
-            <div className="flex items-center gap-4 bg-black/20 p-4 md:p-6 rounded-[2rem] border border-white/5 backdrop-blur-xl">
-              <div className="text-right">
+            <div className="flex items-center gap-3 md:gap-4 bg-black/20 p-3 md:p-6 rounded-[2rem] border border-white/5 backdrop-blur-xl shrink-0">
+              <div className="text-right min-w-0">
                 <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest leading-none mb-1">Cílové místo</p>
-                <p className="text-xs md:text-lg font-black text-white uppercase truncate max-w-[150px] md:max-w-xs">{myActiveTask.to.split(',')[0]}</p>
+                <p className="text-[11px] sm:text-xs md:text-lg font-black text-white uppercase truncate max-w-[120px] sm:max-w-[150px] md:max-w-xs">{myActiveTask.to.split(',')[0]}</p>
               </div>
-              <div className="w-10 h-10 md:w-16 md:h-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl">
+              <div className="w-10 h-10 md:w-16 md:h-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl shrink-0">
                 <Icons.Map className="w-5 h-5 md:w-8 md:h-8 text-orange-600" />
               </div>
             </div>
@@ -298,7 +298,59 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
         </motion.div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 md:gap-8">
+      {/* Crew Utilization Widget */}
+      {user.role === 'admin' && (
+        <section className="bg-slate-800 p-6 md:p-8 rounded-[3rem] border border-white/10 relative overflow-hidden shadow-xl">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-sm md:text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
+              <Icons.Users className="w-5 h-5 text-blue-400" /> Vytížení posádek (Dnes)
+            </h3>
+          </div>
+          <div className="flex overflow-x-auto no-scrollbar gap-4 pb-2">
+            {workers.map(worker => {
+              const workerTasksToday = tasks.filter(t => isToday(t.start) && t.assignedWorkers.includes(worker.id));
+              const isBusy = workerTasksToday.length > 0;
+              const currentTask = workerTasksToday.find(t => {
+                const now = new Date();
+                return now >= t.start && now <= t.end;
+              });
+
+              return (
+                <div key={worker.id} className={`flex-shrink-0 w-[200px] p-4 rounded-3xl border transition-all ${isBusy ? 'bg-blue-950/30 border-blue-500/30' : 'bg-slate-900/50 border-white/5'}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center relative">
+                      {worker.photo ? <img src={worker.photo} className="w-full h-full object-cover" /> : <Icons.User className="w-5 h-5 text-slate-500" />}
+                      <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-900 ${currentTask ? 'bg-red-500' : isBusy ? 'bg-blue-500' : 'bg-green-500'}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-white truncate">{worker.name}</p>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">{worker.role}</p>
+                    </div>
+                  </div>
+                  {currentTask ? (
+                    <div>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Aktuálně:</p>
+                      <p className="text-xs text-red-400 font-black truncate">{currentTask.title}</p>
+                    </div>
+                  ) : isBusy ? (
+                    <div>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Dnes celkem:</p>
+                      <p className="text-xs text-blue-400 font-black truncate">{workerTasksToday.length} zakázek</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase mb-0.5">Status:</p>
+                      <p className="text-xs text-green-400 font-black truncate">Volno</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:gap-8">
         <StartCard 
           label="Tvůj dnešní start" 
           time={myTodayStartTask ? formatTime(myTodayStartTask.start) : '--:--'} 
@@ -313,8 +365,8 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
         />
       </div>
 
-      {isDesktop && (
-        <section className="grid grid-cols-2 gap-4 md:gap-8 animate-fade-in">
+      {isTabletOrDesktop && (
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-8 animate-fade-in">
           <StatCard 
             title="Tento týden"
             completed={weeklyStats.completed}
@@ -440,36 +492,36 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
 
       {selectedTask && (
         <AnimatePresence>
-          <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[70] flex items-end sm:items-center justify-center p-4" onClick={() => setSelectedTask(null)}>
+          <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[70] flex items-end sm:items-center justify-center p-2 sm:p-4" onClick={() => setSelectedTask(null)}>
             <motion.div 
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 100 }}
-              className="bg-slate-900 w-full max-w-2xl rounded-[3rem] p-8 md:p-10 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto no-scrollbar"
+              className="bg-slate-900 w-full max-w-2xl rounded-[2rem] sm:rounded-[3rem] p-5 sm:p-8 md:p-10 shadow-2xl border border-slate-800 max-h-[90vh] overflow-y-auto no-scrollbar"
               onClick={e => e.stopPropagation()}
             >
-            <div className="flex justify-between items-start mb-8">
-              <div className="space-y-3">
+            <div className="flex justify-between items-start mb-6 sm:mb-8 gap-4">
+              <div className="space-y-3 min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2">
-                  <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 text-white rounded-lg inline-block ${
+                  <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-2 sm:px-3 py-1 text-white rounded-lg inline-block ${
                     selectedTask.status === 'Confirmed' ? 'bg-blue-600' : 
                     selectedTask.status === 'In Progress' ? 'bg-red-600' : 
                     selectedTask.status === 'Completed' ? 'bg-green-600' : 'bg-slate-600'
                   }`}>
                     {getStatusLabel(selectedTask.status)}
                   </span>
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-slate-800 text-slate-400 rounded-lg inline-block">
+                  <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-2 sm:px-3 py-1 bg-slate-800 text-slate-400 rounded-lg inline-block">
                     {selectedTask.type}
                   </span>
                   {selectedTask.estimatedPrice && (
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-blue-600/20 text-blue-400 rounded-lg inline-block">
+                    <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-2 sm:px-3 py-1 bg-blue-600/20 text-blue-400 rounded-lg inline-block">
                       {selectedTask.estimatedPrice.toLocaleString()} Kč
                     </span>
                   )}
                 </div>
-                <h3 className="text-3xl md:text-4xl font-black text-white tracking-tighter leading-tight">{selectedTask.title}</h3>
+                <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tighter leading-tight break-words">{selectedTask.title}</h3>
               </div>
-              <button onClick={() => setSelectedTask(null)} className="bg-slate-800 p-3 rounded-2xl hover:bg-slate-700 transition-colors text-slate-400">
+              <button onClick={() => setSelectedTask(null)} className="bg-slate-800 p-2 sm:p-3 rounded-xl sm:rounded-2xl hover:bg-slate-700 transition-colors text-slate-400 shrink-0 mt-1">
                 <Icons.Plus className="rotate-45" />
               </button>
             </div>
@@ -487,33 +539,33 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => handleOpenMaps(selectedTask.from)} className="bg-slate-800 p-6 rounded-[2rem] text-left hover:bg-slate-700 transition-all border border-slate-700 group">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 group-hover:text-blue-400 transition-colors">PŘEVZETÍ</p>
-                  <p className="text-xs font-black text-slate-200 truncate">{selectedTask.from}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                <button onClick={() => handleOpenMaps(selectedTask.from)} className="bg-slate-800 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] text-left hover:bg-slate-700 transition-all border border-slate-700 group flex flex-col justify-center min-h-[5rem]">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 sm:mb-2 group-hover:text-blue-400 transition-colors">PŘEVZETÍ</p>
+                  <p className="text-[10px] sm:text-xs font-black text-slate-200 truncate w-full">{selectedTask.from}</p>
                 </button>
-                <button onClick={() => handleOpenMaps(selectedTask.to)} className="bg-slate-800 p-6 rounded-[2rem] text-left hover:bg-slate-700 transition-all border border-slate-700 group">
-                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 group-hover:text-blue-400 transition-colors">CÍL</p>
-                  <p className="text-xs font-black text-slate-200 truncate">{selectedTask.to}</p>
+                <button onClick={() => handleOpenMaps(selectedTask.to)} className="bg-slate-800 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] text-left hover:bg-slate-700 transition-all border border-slate-700 group flex flex-col justify-center min-h-[5rem]">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 sm:mb-2 group-hover:text-blue-400 transition-colors">CÍL</p>
+                  <p className="text-[10px] sm:text-xs font-black text-slate-200 truncate w-full">{selectedTask.to}</p>
                 </button>
               </div>
 
               <div className="space-y-4">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-2">Přiřazený tým (Řidiči a pracovníci)</p>
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-2 sm:gap-3">
                   {selectedTask.assignedWorkers.map(wid => {
                     const worker = workers.find(w => w.id === wid);
                     return (
-                      <div key={wid} className="flex items-center gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
-                        <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-blue-400 overflow-hidden">
-                          {worker?.photo ? <img src={worker.photo} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Icons.User />}
+                      <div key={wid} className="flex items-center gap-3 sm:gap-4 bg-slate-800/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-700/50">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-slate-700 flex items-center justify-center text-blue-400 overflow-hidden shrink-0">
+                          {worker?.photo ? <img src={worker.photo} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Icons.User className="w-4 h-4 sm:w-5 sm:h-5" />}
                         </div>
-                        <div>
-                          <p className="text-sm font-black text-white">{worker?.name || 'Neznámý pracovník'}</p>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">{worker?.role || 'Pracovník'}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs sm:text-sm font-black text-white truncate">{worker?.name || 'Neznámý pracovník'}</p>
+                          <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase truncate">{worker?.role || 'Pracovník'}</p>
                         </div>
                         {worker?.phone && (
-                          <a href={`tel:${worker.phone.replace(/\s+/g, '')}`} className="ml-auto p-2 text-slate-500 hover:text-blue-400 transition-colors">
+                          <a href={`tel:${worker.phone.replace(/\s+/g, '')}`} className="ml-auto p-1.5 sm:p-2 text-slate-500 hover:text-blue-400 transition-colors shrink-0">
                             <Icons.Phone className="w-4 h-4" />
                           </a>
                         )}
@@ -534,6 +586,83 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
                   </div>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between px-2">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Přidat poznámku (hlasem)</p>
+                </div>
+                <div className="relative">
+                    <textarea 
+                        id="newNoteInput"
+                        placeholder="Zde můžete napsat nebo nadiktovat poznámku..."
+                        className="w-full bg-slate-800 rounded-[2rem] p-4 pr-14 text-sm text-white border-none min-h-[100px] focus:ring-2 focus:ring-blue-500/50 transition-all border border-slate-700/50"
+                        rows={3}
+                    />
+                    <button 
+                      onClick={() => {
+                        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+                        if (!SpeechRecognition) {
+                          alert("Rozpoznávání řeči není v tomto prohlížeči podporováno.");
+                          return;
+                        }
+
+                        const recognition = new SpeechRecognition();
+                        recognition.lang = 'cs-CZ';
+                        recognition.interimResults = false;
+                        
+                        const btn = document.getElementById('micBtn');
+                        if (btn) btn.classList.add('bg-red-600', 'text-white', 'animate-pulse');
+                        
+                        recognition.onend = () => {
+                          if (btn) btn.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+                        };
+                        recognition.onerror = () => {
+                          if (btn) btn.classList.remove('bg-red-600', 'text-white', 'animate-pulse');
+                        };
+                        
+                        recognition.onresult = (event: any) => {
+                          const transcript = Array.from(event.results)
+                            .map((res: any) => res[0].transcript)
+                            .join('');
+                          if (event.results[0].isFinal) {
+                            const input = document.getElementById('newNoteInput') as HTMLTextAreaElement;
+                            if (input) {
+                              input.value = input.value ? `${input.value} ${transcript}` : transcript;
+                            }
+                          }
+                        };
+
+                        recognition.start();
+                      }}
+                      id="micBtn"
+                      className="absolute right-4 top-4 p-3 rounded-2xl transition-all bg-slate-700 text-slate-400 hover:text-white"
+                      title="Diktovat česky"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                    </button>
+                </div>
+                <button 
+                  onClick={async () => {
+                    const input = document.getElementById('newNoteInput') as HTMLTextAreaElement;
+                    const val = input?.value?.trim();
+                    if (!val) return;
+                    
+                    const newNotes = selectedTask.notes ? `${selectedTask.notes}\n\n[${new Date().toLocaleString('cs-CZ')}]: ${val}` : `[${new Date().toLocaleString('cs-CZ')}]: ${val}`;
+                    
+                    try {
+                      await updateDoc(doc(db, 'tasks', selectedTask.id), { notes: newNotes });
+                      setSelectedTask({...selectedTask, notes: newNotes});
+                      input.value = '';
+                      showToast("Poznámka byla přidána");
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.UPDATE, `tasks/${selectedTask.id}`);
+                    }
+                  }}
+                  className="w-full bg-blue-600/20 text-blue-400 font-black py-3 rounded-2xl border border-blue-500/20 hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest text-xs"
+                >
+                  Uložit poznámku
+                </button>
+              </div>
 
               {selectedTask.images && selectedTask.images.length > 0 && (
                 <div className="space-y-4">
@@ -620,10 +749,10 @@ const StartCard = ({ label, time, subtitle, color }: { label: string, time: stri
   };
 
   return (
-    <div className={`p-6 md:p-10 rounded-[2.5rem] bg-slate-800 border ${themes[color]} flex flex-col items-center text-center shadow-xl transition-transform hover:-translate-y-1 animate-fade-in`}>
-      <p className="text-[9px] md:text-xs font-black uppercase tracking-widest opacity-60 mb-2">{label}</p>
-      <span className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-1 md:mb-3">{time}</span>
-      <p className="text-[9px] md:text-sm font-bold text-slate-500 uppercase truncate w-full px-2">{subtitle}</p>
+    <div className={`p-4 sm:p-6 md:p-10 rounded-[2.5rem] bg-slate-800 border ${themes[color]} flex flex-col items-center text-center shadow-xl transition-transform hover:-translate-y-1 animate-fade-in`}>
+      <p className="text-[8px] sm:text-[10px] md:text-xs font-black uppercase tracking-widest opacity-60 mb-1 md:mb-2">{label}</p>
+      <span className="text-2xl sm:text-4xl md:text-6xl font-black text-white tracking-tighter mb-1 md:mb-3">{time}</span>
+      <p className="text-[8px] sm:text-[10px] md:text-sm font-bold text-slate-500 uppercase truncate w-full px-1 sm:px-2">{subtitle}</p>
     </div>
   );
 };

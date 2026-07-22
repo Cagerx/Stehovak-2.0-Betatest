@@ -1,22 +1,63 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { motion } from 'motion/react';
-import { MoveTask, Transaction } from '../types';
-import { format, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths, isWithinInterval, startOfYear, endOfYear, startOfDay, endOfDay } from 'date-fns';
+import { MoveTask, Transaction, Worker, Vehicle } from '../types';
+import { format, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths, isWithinInterval, startOfYear, endOfYear, startOfDay, endOfDay, eachWeekOfInterval, startOfWeek, endOfWeek } from 'date-fns';
 import { cs } from 'date-fns/locale';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, Legend 
 } from 'recharts';
 import { Icons, COLORS } from '../constants';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 interface OrderAnalysisProps {
   tasks: MoveTask[];
   transactions: Transaction[];
+  workers?: Worker[];
+  vehicles?: Vehicle[];
 }
 
-const OrderAnalysis: React.FC<OrderAnalysisProps> = ({ tasks, transactions }) => {
+const COLORS_ARRAY = [
+  '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f43f5e', '#06b6d4', '#eab308'
+];
+
+const OrderAnalysis: React.FC<OrderAnalysisProps> = ({ tasks, transactions, workers = [], vehicles = [] }) => {
   const [timeRange, setTimeRange] = useState<'year' | 'half' | 'quarter'>('year');
+  const [isExporting, setIsExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
+
+  const exportToPDF = async () => {
+    if (!reportRef.current) return;
+    setIsExporting(true);
+    
+    try {
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2,
+        backgroundColor: '#0f172a',
+        useCORS: true,
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`analyza-vykonu-${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Chyba při generování PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const filteredData = useMemo(() => {
     const now = new Date();
@@ -88,18 +129,85 @@ const OrderAnalysis: React.FC<OrderAnalysisProps> = ({ tasks, transactions }) =>
     return Object.entries(stats).map(([name, value]) => ({ name, value }));
   }, [filteredData]);
 
+  const weeklyUtilization = useMemo(() => {
+    const { start, end, filteredTasks } = filteredData;
+    const weeks = eachWeekOfInterval({ start, end }, { weekStartsOn: 1 });
+
+    const workerStats: any[] = [];
+    const vehicleStats: any[] = [];
+
+    weeks.forEach(week => {
+      const weekStart = startOfWeek(week, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(week, { weekStartsOn: 1 });
+      const weekLabel = `${format(weekStart, 'd.M.')}-${format(weekEnd, 'd.M.')}`;
+
+      const wData: any = { name: weekLabel };
+      const vData: any = { name: weekLabel };
+
+      workers?.forEach(w => wData[w.name] = 0);
+      vehicles?.forEach(v => vData[v.plate] = 0);
+
+      const weekTasks = filteredTasks.filter(t => isWithinInterval(t.start, { start: weekStart, end: weekEnd }));
+      
+      weekTasks.forEach(t => {
+        const durationHours = Math.max(0.5, (t.end.getTime() - t.start.getTime()) / (1000 * 60 * 60));
+        
+        t.assignedWorkers?.forEach(wId => {
+          const worker = workers?.find(w => w.id === wId);
+          if (worker) {
+            wData[worker.name] = (wData[worker.name] || 0) + durationHours;
+          }
+        });
+
+        t.assignedVehicles?.forEach(vId => {
+          const vehicle = vehicles?.find(v => v.id === vId);
+          if (vehicle) {
+            vData[vehicle.plate] = (vData[vehicle.plate] || 0) + durationHours;
+          }
+        });
+      });
+
+      // Round values for better display
+      workers?.forEach(w => wData[w.name] = Math.round(wData[w.name] * 10) / 10);
+      vehicles?.forEach(v => vData[v.plate] = Math.round(vData[v.plate] * 10) / 10);
+
+      workerStats.push(wData);
+      vehicleStats.push(vData);
+    });
+
+    return { workerStats, vehicleStats };
+  }, [filteredData, workers, vehicles]);
+
   return (
-    <div className="space-y-8 animate-fade-in pb-10">
+    <div className="space-y-8 animate-fade-in pb-10" ref={reportRef}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Analýza Výkonu</h2>
           <p className="text-slate-500 text-xs font-bold uppercase tracking-widest px-1">Statistiky zakázek a finanční přehled</p>
         </div>
 
-        <div className="flex bg-slate-900 p-1 rounded-2xl border border-white/10 w-fit">
-          <button onClick={() => setTimeRange('quarter')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'quarter' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>3 měsíce</button>
-          <button onClick={() => setTimeRange('half')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'half' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>6 měsíců</button>
-          <button onClick={() => setTimeRange('year')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'year' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>Tento rok</button>
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+          <div className="flex bg-slate-900 p-1 rounded-2xl border border-white/10 w-fit">
+            <button onClick={() => setTimeRange('quarter')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'quarter' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>3 měsíce</button>
+            <button onClick={() => setTimeRange('half')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'half' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>6 měsíců</button>
+            <button onClick={() => setTimeRange('year')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${timeRange === 'year' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-500 hover:text-white'}`}>Tento rok</button>
+          </div>
+          
+          <button 
+            onClick={exportToPDF}
+            disabled={isExporting}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] border border-blue-500/50"
+          >
+            {isExporting ? (
+              <>
+                <Icons.RefreshCw className="w-4 h-4 animate-spin" /> Generuji...
+              </>
+            ) : (
+              <>
+                <Icons.Download className="w-4 h-4" /> Export PDF
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -210,6 +318,48 @@ const OrderAnalysis: React.FC<OrderAnalysisProps> = ({ tasks, transactions }) =>
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="bg-slate-800/50 p-6 rounded-[2.5rem] border border-white/10 shadow-2xl">
+          <h3 className="text-lg font-black text-white uppercase tracking-tighter mb-6 flex items-center gap-2">
+            <div className="w-2 h-6 bg-cyan-500 rounded-full" /> Vytížení Pracovníků (hod./týden)
+          </h3>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weeklyUtilization.workerStats}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                <XAxis dataKey="name" stroke="#64748b" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} minTickGap={20} />
+                <YAxis stroke="#64748b" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #ffffff10', borderRadius: '16px', fontSize: '12px', fontWeight: 'bold' }} itemStyle={{ color: '#fff' }} />
+                <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                {workers?.map((w, i) => (
+                  <Line key={w.id} type="monotone" dataKey={w.name} stroke={COLORS_ARRAY[i % COLORS_ARRAY.length]} strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-slate-800/50 p-6 rounded-[2.5rem] border border-white/10 shadow-2xl">
+          <h3 className="text-lg font-black text-white uppercase tracking-tighter mb-6 flex items-center gap-2">
+            <div className="w-2 h-6 bg-teal-500 rounded-full" /> Vytížení Vozidel (hod./týden)
+          </h3>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weeklyUtilization.vehicleStats}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                <XAxis dataKey="name" stroke="#64748b" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} minTickGap={20} />
+                <YAxis stroke="#64748b" fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #ffffff10', borderRadius: '16px', fontSize: '12px', fontWeight: 'bold' }} itemStyle={{ color: '#fff' }} />
+                <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                {vehicles?.map((v, i) => (
+                  <Line key={v.id} type="monotone" dataKey={v.plate} stroke={COLORS_ARRAY[(i + 3) % COLORS_ARRAY.length]} strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>

@@ -2,6 +2,22 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { AppProvider } from './AppContext';
+
+// Suppress benign WebSocket and AbortError messages from console
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  const msg = args.map(String).join(' ').toLowerCase();
+  if (
+    msg.includes('aborted') ||
+    msg.includes('the user aborted a request') ||
+    msg.includes('websocket closed without opened') ||
+    msg.includes('failed to connect to websocket')
+  ) {
+    return;
+  }
+  originalConsoleError(...args);
+};
 
 // Global handler for unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {
@@ -10,7 +26,9 @@ window.addEventListener('unhandledrejection', (event) => {
   
   if (errorMessage.toLowerCase().includes('aborted') || 
       error?.name === 'AbortError' || 
-      errorMessage.includes('The user aborted a request.')) {
+      errorMessage.includes('the user aborted a request') ||
+      errorMessage.toLowerCase().includes('websocket closed without opened') ||
+      errorMessage.toLowerCase().includes('failed to connect to websocket')) {
     event.preventDefault(); // Prevent the error from showing in the console
   }
 });
@@ -22,7 +40,9 @@ window.addEventListener('error', (event) => {
   
   if (errorMessage.toLowerCase().includes('aborted') || 
       error?.name === 'AbortError' || 
-      errorMessage.includes('The user aborted a request.')) {
+      errorMessage.includes('the user aborted a request') ||
+      errorMessage.toLowerCase().includes('websocket closed without opened') ||
+      errorMessage.toLowerCase().includes('failed to connect to websocket')) {
     event.preventDefault(); // Prevent the error from showing in the console
   }
 });
@@ -35,6 +55,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <AppProvider>
+      <App />
+    </AppProvider>
   </React.StrictMode>
 );

@@ -47,7 +47,7 @@ interface AILabProps {
 }
 
 const AILab: React.FC<AILabProps> = ({ user, showToast }) => {
-  const [activeTool, setActiveTool] = useState<'thinking' | 'fast_chat' | 'vision' | 'generation' | 'maps' | 'edit' | 'seed' | 'story' | null>(null);
+  const [activeTool, setActiveTool] = useState<'thinking' | 'fast_chat' | 'vision' | 'generation' | 'maps' | 'edit' | 'story' | null>(null);
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -233,48 +233,7 @@ const AILab: React.FC<AILabProps> = ({ user, showToast }) => {
     setLoading(true);
     setResult(null);
     try {
-      if (activeTool === 'seed') {
-        const today = new Date();
-        const tomorrow = new Date();
-        tomorrow.setDate(today.getDate() + 1);
-
-        const task1: Omit<MoveTask, 'id'> = {
-          title: "Stěhování: Praha -> Brno (Expres)",
-          customer: "Jan Novák",
-          customerPhone: "+420 777 123 456",
-          start: new Date(today.setHours(10, 0, 0, 0)),
-          end: new Date(today.setHours(14, 0, 0, 0)),
-          from: "Václavské náměstí 1, Praha",
-          to: "Náměstí Svobody 1, Brno",
-          assignedWorkers: user.workerId ? [user.workerId] : [],
-          assignedVehicles: [],
-          status: 'Confirmed',
-          type: 'Byt 2+kk',
-          priority: 'High',
-          notes: "Pozor na klavír v 2. patře."
-        };
-
-        const task2: Omit<MoveTask, 'id'> = {
-          title: "Převoz nábytku: IKEA Černý Most",
-          customer: "Marie Svobodová",
-          customerPhone: "+420 602 987 654",
-          start: new Date(tomorrow.setHours(9, 0, 0, 0)),
-          end: new Date(tomorrow.setHours(11, 0, 0, 0)),
-          from: "IKEA Černý Most, Praha",
-          to: "Sokolovská 123, Praha",
-          assignedWorkers: user.workerId ? [user.workerId] : [],
-          assignedVehicles: [],
-          status: 'Pending',
-          type: 'Drobný převoz',
-          priority: 'Medium',
-          notes: "Vyzvednout u rampy č. 5."
-        };
-
-        await addDoc(collection(db, 'tasks'), task1);
-        await addDoc(collection(db, 'tasks'), task2);
-        showToast("Testovací data vytvořena");
-        if (isMounted.current) setResult("Fiktivní zakázky byly úspěšně vytvořeny a přiřazeny k vašemu profilu.");
-      } else if (activeTool === 'fast_chat') {
+      if (activeTool === 'fast_chat') {
         const res = await geminiService.chatFast(input);
         if (isMounted.current) setResult(res);
       } else if (activeTool === 'story') {
@@ -335,53 +294,15 @@ const AILab: React.FC<AILabProps> = ({ user, showToast }) => {
           <ToolCard title="Rychlý Chat" desc="Flash Lite odpovědi." icon={<Icons.Zap />} onClick={() => setActiveTool('fast_chat')} />
           <ToolCard title="Plánovač" desc="Hloubkové plánování." icon={<Icons.Sparkles />} onClick={() => setActiveTool('thinking')} />
           <ToolCard title="Vizuální Analýza" desc="Odhad objemu z foto." icon={<Icons.Camera />} onClick={() => setActiveTool('vision')} />
-          <ToolCard title="Testovací Data" desc="Vytvořit 2 mise." icon={<Icons.Plus />} onClick={() => setActiveTool('seed')} />
+          <ToolCard title="AI Designér" desc="Generování obrázků." icon={<Icons.ImageEdit />} onClick={() => setActiveTool('generation')} />
+          <ToolCard title="AI Editor" desc="Úprava fotografií." icon={<Icons.Edit />} onClick={() => setActiveTool('edit')} />
+          <ToolCard title="Průzkumník" desc="Hledání v mapách." icon={<Icons.Map />} onClick={() => setActiveTool('maps')} />
+          <ToolCard title="Příběhy" desc="Kreativní psaní." icon={<Icons.BookOpen />} onClick={() => setActiveTool('story')} />
         </div>
       </motion.div>
     );
   }
 
-  if (activeTool === 'seed') {
-    return (
-      <motion.div 
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="space-y-6"
-      >
-        <div className="flex items-center gap-3">
-          <button onClick={reset} className="p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <h2 className="text-lg font-black text-white uppercase tracking-tight">Generátor Testovacích Dat</h2>
-        </div>
-        <div className="bg-slate-800 rounded-[32px] p-8 shadow-xl border border-slate-700 text-center space-y-6">
-          <div className="w-20 h-20 bg-blue-600/20 rounded-full flex items-center justify-center text-blue-400 mx-auto">
-            <Icons.Plus className="w-10 h-10" />
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-black text-white uppercase">Vytvořit fiktivní zakázky?</h3>
-            <p className="text-sm text-slate-400">Tato akce vytvoří 2 vzorové zakázky (jednu na dnes a jednu na zítra) a přiřadí je přímo k vašemu profilu.</p>
-          </div>
-          <button 
-            onClick={runTool}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3 disabled:opacity-30 transition-all active:scale-95"
-          >
-            {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Potvrdit a vytvořit"}
-          </button>
-        </div>
-        {result && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-green-600/10 border border-green-500/20 p-6 rounded-[32px] text-center"
-          >
-            <p className="text-green-400 text-sm font-bold">{result}</p>
-          </motion.div>
-        )}
-      </motion.div>
-    );
-  }
 
   return (
     <motion.div 

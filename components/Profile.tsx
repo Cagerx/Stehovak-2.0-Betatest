@@ -9,6 +9,7 @@ import { handleFirestoreError } from '../App';
 import AILab from './AILab';
 
 import { googleService, GoogleCalendarEvent, GmailMessage } from '../services/googleService';
+import QRCodePayment from './QRCodePayment';
 
 interface ProfileProps {
   user: { id: string, name: string, email: string, avatar: string, role: 'admin' | 'user', workerId?: string };
@@ -511,6 +512,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         );
       case 'AI Laboratoř':
         return <AILab user={user} showToast={showToast} />;
+      case 'Platba QR kódem':
+        return <QRCodePayment isAdmin={isAdmin} showToast={showToast} />;
       case 'Nápověda':
         return (
           <div className="space-y-6">
@@ -824,8 +827,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
   return (
     <div className="space-y-8 flex flex-col items-center animate-fade-in">
 
-      <div className="text-center mt-8">
-        <div className="w-32 h-32 rounded-[40px] border-4 border-white/20 shadow-2xl mx-auto overflow-hidden relative mb-6">
+      <div className="text-center mt-4 sm:mt-8">
+        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[35px] sm:rounded-[40px] border-4 border-white/20 shadow-2xl mx-auto overflow-hidden relative mb-4 sm:mb-6">
           <img src={user.avatar} alt="Profile" className="w-full h-full object-cover" />
         </div>
         <div className="flex flex-col items-center gap-1">
@@ -867,6 +870,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           label="Google Integrace" 
           icon="🌐" 
           onClick={() => setActiveDetail('Google Integrace')} 
+        />
+        <SettingItem 
+          label="Platba QR kódem" 
+          icon="📱" 
+          onClick={() => setActiveDetail('Platba QR kódem')} 
         />
         <SettingItem 
           label="AI Laboratoř" 

@@ -1,19 +1,17 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AppTab, Worker, Vehicle, MoveTask, Transaction, CompanySettings, MaintenanceRequest, OperationType } from './types';
+import { AppTab, OperationType } from './types';
 import { Icons, COLORS } from './constants';
 import Dashboard from './components/Dashboard';
 import CalendarView from './components/CalendarView';
 import FleetView from './components/FleetView';
 import MaintenanceView from './components/MaintenanceView';
 import OrderAnalysis from './components/OrderAnalysis';
-import AILab from './components/AILab';
 import Profile from './components/Profile';
 import ErrorBoundary from './components/ErrorBoundary';
-import { db, auth, googleProvider, testDatabaseConnection } from './firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import { signInWithPopup, onAuthStateChanged, signOut, GoogleAuthProvider } from 'firebase/auth';
+import { useAppContext } from './AppContext';
+import { auth } from './firebase';
 
 // Error handling
 interface FirestoreErrorInfo {
@@ -32,12 +30,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
                   errorMessage.toLowerCase().includes('failed to fetch') ||
                   (error as any)?.name === 'AbortError';
 
-  if (isAbort) return true; // Silent return for aborted requests
+  if (isAbort) return true;
 
   if (errorMessage.toLowerCase().includes('quota exceeded')) {
     window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-    // We don't log to console.error for quota exceeded to keep logs clean
-    // since we show a prominent banner in the UI.
     console.warn('Firestore Quota Exceeded. Banner displayed to user.');
     return true;
   }
@@ -53,324 +49,32 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   
-  // Only throw if it's a permission error to allow system diagnosis,
-  // otherwise just log to prevent unhandled rejections for things like aborts.
   if (errorMessage.toLowerCase().includes('permission') || errorMessage.toLowerCase().includes('missing or insufficient')) {
     throw new Error(JSON.stringify(errInfo));
   }
   return false;
 }
 
-interface AppUser {
-  id: string;
-  name: string;
-  email: string;
-  avatar: string;
-  role: 'admin' | 'user';
-  workerId?: string;
-}
-
-// Helper to decode JWT safely
-function decodeJwt(token: string) {
-  try {
-    if (!token) return null;
-    const parts = token.split('.');
-    if (parts.length < 2) return null;
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    console.error("JWT Decode Error", e);
-    return null;
-  }
-}
-
-// DŮLEŽITÉ: Uložte váš obrázek jako 'logo.png' do složky 'public'.
 const LOGO_URL = "/logo.png"; 
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AppTab>(AppTab.DASHBOARD);
-  const [toast, setToast] = useState<string | null>(null);
-
-  const showToast = (message: string) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 3000);
-  };
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [isApproved, setIsApproved] = useState<boolean | null>(null);
-  const [apiKeySelected, setApiKeySelected] = useState(false);
-  const [checkingApiKey, setCheckingApiKey] = useState(true);
-
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [tasks, setTasks] = useState<MoveTask[]>([]);
-  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
-  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(localStorage.getItem('google_access_token'));
-  const [isAutoRegistering, setIsAutoRegistering] = useState(false);
-  const registrationInProgress = React.useRef(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const email = firebaseUser.email || '';
-        
-        // We'll handle the worker matching and auto-registration in a separate effect
-        // to keep this listener stable.
-        setIsAuthReady(true);
-      } else {
-        setUser(null);
-        setIsApproved(null);
-        setActiveTab(AppTab.DASHBOARD); // Reset tab to main page on logout
-        setIsAuthReady(true);
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Separate effect for user profile and registration logic
-  useEffect(() => {
-    if (!isAuthReady || !auth.currentUser) return;
-
-    const firebaseUser = auth.currentUser;
-    const email = firebaseUser.email || '';
-    const matchingWorker = workers.find(w => w.email?.toLowerCase() === email.toLowerCase());
-
-    const processUser = async () => {
-      const adminEmails = ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com'];
-      const allowedUserEmails = ['kubienalubo@gmail.com', 'zdenekondo444@gmail.com'];
-      const isWhitelisted = adminEmails.includes(email.toLowerCase()) || allowedUserEmails.includes(email.toLowerCase());
-
-      // Auto-registration logic - only for whitelisted emails
-      if (!matchingWorker && !registrationInProgress.current && isAuthReady && isWhitelisted) {
-        registrationInProgress.current = true;
-        setIsAutoRegistering(true);
-        try {
-          const newWorkerId = firebaseUser.uid;
-          const workerRef = doc(db, 'workers', newWorkerId);
-          const workerSnap = await getDoc(workerRef);
-          
-          if (!workerSnap.exists()) {
-            const newWorker: any = {
-              id: newWorkerId,
-              name: firebaseUser.displayName || 'Nový člen týmu',
-              phone: '',
-              role: 'Loader',
-              status: 'Available'
-            };
-            if (email) {
-              newWorker.email = email;
-            }
-            if (firebaseUser.photoURL) {
-              newWorker.photo = firebaseUser.photoURL;
-            }
-            
-            await setDoc(workerRef, newWorker);
-          }
-        } catch (error) {
-          const handled = handleFirestoreError(error, OperationType.WRITE, `workers/${firebaseUser.uid}`);
-          if (!handled) console.error("Auto-registration failed:", error);
-        } finally {
-          setIsAutoRegistering(false);
-          registrationInProgress.current = false;
-        }
-        return;
-      }
-
-      const isAdmin = adminEmails.includes(email.toLowerCase()) || matchingWorker?.id === '1';
-      const approved = isAdmin || allowedUserEmails.includes(email.toLowerCase()) || !!matchingWorker;
-      
-      setIsApproved(approved);
-
-      if (approved) {
-        // Only update if data actually changed to prevent unnecessary re-renders of dependent effects
-        const newUser: AppUser = {
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName || matchingWorker?.name || 'Uživatel Stěhovák',
-          email: email,
-          avatar: firebaseUser.photoURL || 'https://picsum.photos/seed/user/200/200',
-          role: isAdmin ? 'admin' : 'user',
-          workerId: matchingWorker?.id
-        };
-
-        setUser(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(newUser)) return prev;
-          return newUser;
-        });
-      } else {
-        setUser(null);
-      }
-    };
-
-    processUser();
-  }, [workers, isAuthReady, isAutoRegistering]);
-
-  useEffect(() => {
-    // Only run connection test once and handle error silently if it's just a permission issue on mount
-    testDatabaseConnection().catch(() => {});
-    
-    // API Key Check for premium models
-    const checkKey = async () => {
-      try {
-        // @ts-ignore
-        if (window.aistudio) {
-          // @ts-ignore
-          const hasKey = await window.aistudio.hasSelectedApiKey();
-          setApiKeySelected(hasKey);
-        } else {
-          // If aistudio is not available, assume we can proceed for local dev or other environments.
-          setApiKeySelected(true); 
-        }
-      } catch (error) {
-        console.error("Error checking API key:", error);
-        setApiKeySelected(true); // Fallback
-      } finally {
-        setCheckingApiKey(false);
-      }
-    };
-    // Use a timeout to ensure aistudio is loaded
-    setTimeout(checkKey, 500);
-
-    const handleQuota = () => setQuotaExceeded(true);
-    window.addEventListener('firestore-quota-exceeded', handleQuota);
-    return () => window.removeEventListener('firestore-quota-exceeded', handleQuota);
-  }, []);
-
-  // Firestore Listeners
-  useEffect(() => {
-    if (!user?.id || !isAuthReady) return; // Only listen if authenticated and auth is ready
-
-    const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
-      const tasksData = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          start: data.start?.toDate ? data.start.toDate() : new Date(data.start),
-          end: data.end?.toDate ? data.end.toDate() : new Date(data.end)
-        } as MoveTask;
-      });
-      setTasks(tasksData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'tasks'));
-
-    const unsubWorkers = onSnapshot(collection(db, 'workers'), (snapshot) => {
-      const workersData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Worker));
-      setWorkers(workersData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'workers'));
-
-    const unsubVehicles = onSnapshot(collection(db, 'vehicles'), (snapshot) => {
-      const vehiclesData = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Vehicle));
-      setVehicles(vehiclesData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'vehicles'));
-
-    const unsubTransactions = onSnapshot(collection(db, 'transactions'), (snapshot) => {
-      const txData = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          date: data.date?.toDate ? data.date.toDate() : new Date(data.date)
-        } as Transaction;
-      });
-      setTransactions(txData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'transactions'));
-
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'company'), (docSnap) => {
-      if (docSnap.exists()) {
-        setCompanySettings(docSnap.data() as CompanySettings);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/company'));
-
-    const unsubMaintenance = onSnapshot(collection(db, 'maintenanceRequests'), (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        const d = doc.data();
-        return {
-          ...d,
-          id: doc.id,
-          createdAt: d.createdAt?.toDate ? d.createdAt.toDate() : new Date(d.createdAt)
-        } as MaintenanceRequest;
-      });
-      setMaintenanceRequests(data);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'maintenanceRequests'));
-
-    return () => {
-      unsubTasks();
-      unsubWorkers();
-      unsubVehicles();
-      unsubTransactions();
-      unsubSettings();
-      unsubMaintenance();
-    };
-  }, [user?.id, isAuthReady]);
-
-  const handleSelectApiKey = async () => {
-      // @ts-ignore
-      if (window.aistudio) {
-          try {
-            // @ts-ignore
-            await window.aistudio.openSelectKey();
-            // Optimistically set to true to avoid race condition and proceed
-            setApiKeySelected(true);
-            setCheckingApiKey(false);
-          } catch (error: any) {
-            // Ignore abort errors when user closes the dialog
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            if (error?.name !== 'AbortError' && !errorMessage.toLowerCase().includes('aborted')) {
-              console.error("Error selecting API key:", error);
-            }
-          }
-      }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      setAuthError(null);
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      const token = credential?.accessToken;
-      if (token) {
-        setGoogleAccessToken(token);
-        localStorage.setItem('google_access_token', token);
-      }
-      // Hard refresh to ensure clean state and immediate redirection to main app
-      window.location.reload();
-    } catch (error: any) {
-      const errorMessage = (error.message || String(error)).toLowerCase();
-      const isAbort = error.code === 'auth/popup-closed-by-user' || 
-                      error.code === 'auth/cancelled-popup-request' ||
-                      errorMessage.includes('aborted') ||
-                      errorMessage.includes('cancel') ||
-                      errorMessage.includes('the user aborted a request') ||
-                      errorMessage.includes('signal is aborted') ||
-                      errorMessage.includes('failed to fetch');
-
-      if (isAbort) {
-        // User closed the popup or request was cancelled, no need to show a scary error
-        return;
-      }
-      
-      console.error("Google Auth Error:", error);
-      setAuthError("Přihlášení selhalo. Zkontrolujte nastavení.");
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      setActiveTab(AppTab.DASHBOARD); // Ensure we land on dashboard next time
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-  };
+  const [showNotifications, setShowNotifications] = React.useState(false);
+  const {
+    activeTab, setActiveTab,
+    user,
+    workers, setWorkers,
+    vehicles, setVehicles,
+    tasks, setTasks,
+    transactions, setTransactions,
+    maintenanceRequests,
+    companySettings,
+    notifications, markNotificationAsRead, markAllNotificationsAsRead,
+    googleAccessToken,
+    toast, showToast,
+    isApproved, authError, setAuthError, quotaExceeded,
+    apiKeySelected, checkingApiKey,
+    handleGoogleLogin, handleLogout, handleSelectApiKey
+  } = useAppContext();
 
   const getTabLabel = (tab: AppTab) => {
     switch (tab) {
@@ -432,7 +136,7 @@ const App: React.FC = () => {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent rounded-2xl flex items-end justify-center pb-6">
                 <h2 className="text-2xl font-black tracking-tighter uppercase italic text-white drop-shadow-lg">
-                  "You shall not pass, motherfucker."
+                  "Tady neprojdeš, kámo."
                 </h2>
               </div>
             </div>
@@ -469,7 +173,7 @@ const App: React.FC = () => {
                onError={(e) => {
                  e.currentTarget.onerror = null; 
                  e.currentTarget.style.display = 'none';
-                 e.currentTarget.parentElement!.innerHTML = '<div class="text-center bg-slate-800 rounded-3xl p-8 border border-slate-700"><p class="text-[60px]">🚛</p><p class="text-[10px] text-slate-400 font-bold mt-2">LOGO.PNG<br/>MISSING</p></div>';
+                 e.currentTarget.parentElement!.innerHTML = '<div class="text-center bg-slate-800 rounded-3xl p-8 border border-slate-700"><p class="text-[60px]">🚛</p><p class="text-[10px] text-slate-400 font-bold mt-2">LOGO.PNG<br/>CHYBÍ</p></div>';
                }}
              />
           </div>
@@ -560,7 +264,71 @@ const App: React.FC = () => {
             <p className="text-[9px] md:text-xs text-red-500 font-black tracking-widest mt-0.5 md:mt-1">{getTabLabel(activeTab)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <button 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="relative p-2 md:p-3 bg-slate-800 rounded-2xl border border-white/10 hover:border-blue-500 hover:bg-slate-700 transition-all text-white/70 hover:text-white group"
+            >
+              <Icons.Bell className="w-5 h-5 md:w-6 md:h-6 group-hover:scale-110 transition-transform" />
+              {notifications.filter(n => !n.read).length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-red-500 rounded-full text-[9px] md:text-[10px] font-black flex items-center justify-center text-white border-2 border-slate-900 shadow-[0_0_10px_#ef4444]">
+                  {notifications.filter(n => !n.read).length}
+                </span>
+              )}
+            </button>
+
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 top-full mt-3 w-80 max-h-96 bg-slate-800 rounded-3xl border border-white/10 shadow-2xl overflow-hidden z-50 flex flex-col"
+                >
+                  <div className="p-4 border-b border-white/5 flex items-center justify-between bg-slate-900/50">
+                    <h3 className="text-xs font-black uppercase text-white tracking-widest">Oznámení</h3>
+                    {notifications.filter(n => !n.read).length > 0 && (
+                      <button 
+                        onClick={markAllNotificationsAsRead}
+                        className="text-[10px] font-bold text-blue-400 hover:text-blue-300 uppercase"
+                      >
+                        Přečíst vše
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto no-scrollbar">
+                    {notifications.length > 0 ? (
+                      notifications.map(notif => (
+                        <div 
+                          key={notif.id} 
+                          onClick={() => {
+                            if (!notif.read) markNotificationAsRead(notif.id);
+                            if (notif.taskId) {
+                              setActiveTab(AppTab.CALENDAR);
+                              setShowNotifications(false);
+                            }
+                          }}
+                          className={`p-4 border-b border-white/5 cursor-pointer transition-colors hover:bg-slate-700/50 ${notif.read ? 'opacity-50' : 'bg-blue-500/5'}`}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">{notif.title}</span>
+                            <span className="text-[9px] font-bold text-slate-500">{notif.createdAt.toLocaleDateString('cs-CZ')}</span>
+                          </div>
+                          <p className="text-xs text-slate-300 font-medium leading-relaxed">{notif.message}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center text-slate-500 flex flex-col items-center">
+                        <Icons.Check className="w-8 h-8 mb-2 opacity-50" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Žádná nová oznámení</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           <div className="w-10 h-10 md:w-14 md:h-14 rounded-2xl overflow-hidden border-2 border-white/20 shadow-md">
             <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
           </div>
@@ -593,7 +361,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 lg:p-12 pb-32 md:pb-40 w-full max-w-7xl mx-auto">
+      <main className="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-6 md:p-8 lg:p-12 pb-32 md:pb-40 w-full max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -626,6 +394,8 @@ const App: React.FC = () => {
               <OrderAnalysis 
                 tasks={tasks}
                 transactions={transactions}
+                workers={workers}
+                vehicles={vehicles}
               />
             )}
             {activeTab === AppTab.PROFILE && (

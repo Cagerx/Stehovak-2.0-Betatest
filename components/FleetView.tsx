@@ -99,7 +99,7 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
 
     try {
       await setDoc(doc(db, 'workers', workerData.id), workerData);
-      showToast("Record Saved");
+      showToast("Záznam uložen");
       setShowWorkerModal(false);
     } catch (error) {
       const handled = handleFirestoreError(error, OperationType.WRITE, `workers/${workerData.id}`);
@@ -137,7 +137,7 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
 
     try {
       await setDoc(doc(db, 'vehicles', vehicleData.id), vehicleData);
-      showToast("Record Saved");
+      showToast("Záznam uložen");
       setShowVehicleModal(false);
     } catch (error) {
       const handled = handleFirestoreError(error, OperationType.WRITE, `vehicles/${vehicleData.id}`);
@@ -169,9 +169,40 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
-        if (type === 'photo') setSelectedWorker(p => ({...p, photo: base64}));
-        if (type === 'car') setSelectedVehicle(p => ({...p, carImage: base64}));
-        if (type === 'tech') setSelectedVehicle(p => ({...p, techCertImage: base64}));
+        
+        // Komprese obrazku aby nepresahl limit 1MB v db
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const MAX_SIZE = 800; // optimalne pro nahledy a detaily
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+            
+            if (type === 'photo') setSelectedWorker(p => p ? {...p, photo: resizedBase64} : p);
+            if (type === 'car') setSelectedVehicle(p => p ? {...p, carImage: resizedBase64} : p);
+            if (type === 'tech') setSelectedVehicle(p => p ? {...p, techCertImage: resizedBase64} : p);
+          }
+        };
+        img.src = base64;
       };
       reader.readAsDataURL(file);
     }
@@ -192,22 +223,22 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
             const isAvailable = !onTask && w.status === 'Available';
             
             return (
-              <div key={w.id} onClick={() => handleOpenWorker(w)} className="bg-slate-800 p-4 rounded-3xl border border-white/5 flex items-center gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
-                <div className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all ${
+              <div key={w.id} onClick={() => handleOpenWorker(w)} className="bg-slate-800 p-3 sm:p-4 rounded-[1.5rem] sm:rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center shrink-0 transition-all ${
                   isAvailable 
                     ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 group-hover:bg-blue-600/20' 
                     : onTask 
                       ? 'bg-orange-600/10 border-orange-500/20 text-orange-400 group-hover:bg-orange-600/20'
                       : 'bg-red-600/10 border-red-500/20 text-red-400 group-hover:bg-red-600/20'
                 }`}>
-                  {w.photo ? <img src={w.photo} className="w-full h-full object-cover rounded-xl" /> : <Icons.User className="w-6 h-6" />}
+                  {w.photo ? <img src={w.photo} className="w-full h-full object-cover rounded-[10px] sm:rounded-xl" /> : <Icons.User className="w-5 h-5 sm:w-6 sm:h-6" />}
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-sm">{w.name}</h4>
-                  <p className="text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5">{getRoleLabel(w.role)}</p>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{w.name}</h4>
+                  <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5 truncate">{getRoleLabel(w.role)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className={`text-[8px] px-3 py-1 rounded-full font-black uppercase tracking-widest ${
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
                     isAvailable 
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
                       : onTask 
@@ -233,22 +264,22 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
             const isReady = !onTask && (v.status === 'Ready' || v.status === 'In Use');
             
             return (
-              <div key={v.id} onClick={() => handleOpenVehicle(v)} className="bg-slate-800 p-4 rounded-3xl border border-white/5 flex items-center gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
-                <div className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all ${
+              <div key={v.id} onClick={() => handleOpenVehicle(v)} className="bg-slate-800 p-3 sm:p-4 rounded-[1.5rem] sm:rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center shrink-0 transition-all ${
                   isReady 
                     ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 group-hover:bg-blue-600/20' 
                     : onTask 
                       ? 'bg-orange-600/10 border-orange-500/20 text-orange-400 group-hover:bg-orange-600/20'
                       : 'bg-red-600/10 border-red-500/20 text-red-400 group-hover:bg-red-600/20'
                 }`}>
-                  {v.carImage ? <img src={v.carImage} className="w-full h-full object-cover rounded-xl" /> : <Icons.Truck className="w-6 h-6" />}
+                  {v.carImage ? <img src={v.carImage} className="w-full h-full object-cover rounded-[10px] sm:rounded-xl" /> : <Icons.Truck className="w-5 h-5 sm:w-6 sm:h-6" />}
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-sm">{v.model}</h4>
-                  <p className="text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5">{v.plate}</p>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{v.model}</h4>
+                  <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5 truncate">{v.plate}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className={`text-[8px] px-3 py-1 rounded-full font-black uppercase tracking-widest ${
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
                     isReady 
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
                       : onTask 
@@ -276,8 +307,8 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
 
       {/* Worker Modal */}
       {showWorkerModal && selectedWorker && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-slate-900 w-full max-w-md rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 w-full max-w-md rounded-[2rem] sm:rounded-[32px] p-5 sm:p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
             <h3 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter">Profil pracovníka</h3>
             <div className="space-y-4">
               <div className="flex justify-center mb-4">
@@ -377,8 +408,8 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
 
       {/* Vehicle Modal */}
       {showVehicleModal && selectedVehicle && (
-        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-slate-900 w-full max-w-xl rounded-[32px] p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 w-full max-w-xl rounded-[2rem] sm:rounded-[32px] p-5 sm:p-8 border border-slate-800 animate-slide-up max-h-[90vh] overflow-y-auto no-scrollbar">
             <h3 className="text-2xl font-black text-white mb-6 uppercase tracking-tighter">Detail Vozidla</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -463,8 +494,8 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
               <div className="pt-4 border-t border-slate-800">
                  <h4 className="text-[10px] font-black text-slate-400 uppercase mb-3">Pneumatiky a Servis</h4>
                  <div className="grid grid-cols-2 gap-4">
-                    <input value={selectedVehicle.tireSize} onChange={e => setSelectedVehicle({...selectedVehicle, tireSize: e.target.value})} placeholder="Rozměr" className="bg-slate-800 rounded-xl p-3 text-xs border-none" />
-                    <input value={selectedVehicle.tireDepth} onChange={e => setSelectedVehicle({...selectedVehicle, tireDepth: e.target.value})} placeholder="Dezén (mm)" className="bg-slate-800 rounded-xl p-3 text-xs border-none" />
+                    <input value={selectedVehicle.tireSize || ''} onChange={e => setSelectedVehicle({...selectedVehicle, tireSize: e.target.value})} placeholder="Rozměr" className="bg-slate-800 rounded-xl p-3 text-xs border-none" />
+                    <input value={selectedVehicle.tireDepth || ''} onChange={e => setSelectedVehicle({...selectedVehicle, tireDepth: e.target.value})} placeholder="Dezén (mm)" className="bg-slate-800 rounded-xl p-3 text-xs border-none" />
                  </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

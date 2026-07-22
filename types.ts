@@ -80,6 +80,17 @@ export interface MaintenanceRequest {
   status: 'Pending' | 'Resolved';
 }
 
+export interface AppNotification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  createdAt: Date;
+  read: boolean;
+  type: 'task_assigned' | 'task_changed' | 'system';
+  taskId?: string;
+}
+
 export enum AppTab {
   DASHBOARD = 'dashboard',
   CALENDAR = 'calendar',

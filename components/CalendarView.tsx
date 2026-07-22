@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, DragEvent } from 'react';
 import { MoveTask, Worker, Vehicle, OperationType } from '../types';
 import { Icons, COLORS } from '../constants';
 import { geminiService } from '../services/geminiService';
@@ -37,6 +37,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [workerFilter, setWorkerFilter] = useState<string>('All');
   const [sortMode, setSortMode] = useState<'time' | 'driver'>('time');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
   const [currentTask, setCurrentTask] = useState<Partial<MoveTask>>({
     title: '', customer: '', customerPhone: '', from: '', to: '',
@@ -146,6 +147,107 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
   const END_HOUR = 22;
   const HOUR_HEIGHT = 90;
 
+  const handleDragStart = (e: DragEvent<HTMLDivElement>, taskId: string) => {
+    e.dataTransfer.setData('text/plain', taskId);
+    setDraggedTaskId(taskId);
+  };
+
+  const createNotificationForWorkers = async (task: MoveTask, type: 'task_assigned' | 'task_changed') => {
+    if (!task.assignedWorkers || task.assignedWorkers.length === 0) return;
+    try {
+      const title = type === 'task_assigned' ? 'Nová zakázka' : 'Změna v zakázce';
+      const message = type === 'task_assigned' 
+        ? `Byla vám přiřazena nová zakázka "${task.title}".`
+        : `Zakázka "${task.title}" byla upravena (změna času nebo detailů).`;
+      
+      const notifPromises = task.assignedWorkers.map(workerId => 
+        addDoc(collection(db, 'notifications'), {
+          userId: workerId,
+          title,
+          message,
+          taskId: task.id,
+          read: false,
+          type,
+          createdAt: Timestamp.now()
+        })
+      );
+      await Promise.all(notifPromises);
+    } catch (e) {
+      console.error('Failed to send notifications', e);
+    }
+  };
+
+  const handleDropOnDayViewTime = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('text/plain');
+    setDraggedTaskId(null);
+    if (!taskId) return;
+
+    const taskToMove = tasks.find(t => t.id === taskId);
+    if (!taskToMove) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+
+    let exactHour = y / HOUR_HEIGHT + START_HOUR;
+    exactHour = Math.max(START_HOUR, Math.min(END_HOUR, exactHour));
+    
+    // Snap to 15 mins
+    const snappedHour = Math.round(exactHour * 4) / 4;
+    const hours = Math.floor(snappedHour);
+    const minutes = Math.round((snappedHour - hours) * 60);
+
+    const duration = taskToMove.end.getTime() - taskToMove.start.getTime();
+    const newStart = new Date(taskToMove.start);
+    newStart.setFullYear(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    newStart.setHours(hours, minutes, 0, 0);
+    const newEnd = new Date(newStart.getTime() + duration);
+
+    const updatedTask = { ...taskToMove, start: newStart, end: newEnd };
+
+    try {
+      await setDoc(doc(db, 'tasks', taskId), {
+        ...updatedTask,
+        start: Timestamp.fromDate(newStart),
+        end: Timestamp.fromDate(newEnd)
+      });
+      showToast("Čas plánování přesunut");
+      await createNotificationForWorkers(updatedTask, 'task_changed');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
+    }
+  };
+
+  const handleDropOnWeekDay = async (e: DragEvent<HTMLDivElement>, targetDate: Date) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove('bg-slate-700', 'border-blue-500');
+    const taskId = e.dataTransfer.getData('text/plain');
+    setDraggedTaskId(null);
+    if (!taskId) return;
+
+    const taskToMove = tasks.find(t => t.id === taskId);
+    if (!taskToMove) return;
+
+    const newStart = new Date(taskToMove.start);
+    newStart.setFullYear(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const newEnd = new Date(taskToMove.end);
+    newEnd.setFullYear(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+
+    const updatedTask = { ...taskToMove, start: newStart, end: newEnd };
+
+    try {
+      await setDoc(doc(db, 'tasks', taskId), {
+        ...updatedTask,
+        start: Timestamp.fromDate(newStart),
+        end: Timestamp.fromDate(newEnd)
+      });
+      showToast("Termín přesunut");
+      await createNotificationForWorkers(updatedTask, 'task_changed');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `tasks/${taskId}`);
+    }
+  };
+
   const handleOpenCreate = () => {
     setIsEditing(false);
     setAnalysisError(null);
@@ -203,6 +305,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
       }
       
       if (!isEditing) {
+        await createNotificationForWorkers(taskData, 'task_assigned');
         // --- AUTOMATICKÁ NOTIFIKACE (SMS - HROMADNÁ) ---
         // Pokud je to nová zakázka, pošli SMS všem přiřazeným pracovníkům
         const assignedTeam = workers.filter(w => w.id && taskData.assignedWorkers.includes(w.id));
@@ -233,6 +336,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
           }, 300);
         }
         // ----------------------------------------
+      } else {
+        await createNotificationForWorkers(taskData, 'task_changed');
       }
       showToast("Změny byly uloženy");
       setShowModal(false);
@@ -403,9 +508,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
             <div key={i} style={{ height: `${HOUR_HEIGHT}px` }}>{START_HOUR + i}:00</div>
           ))}
         </div>
-        <div className="ml-14 relative h-full min-h-[1440px]">
+        <div 
+          className="ml-14 relative h-full min-h-[1440px]"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDropOnDayViewTime}
+        >
            {Array.from({ length: END_HOUR - START_HOUR + 1 }).map((_, i) => (
-             <div key={i} className="border-t border-white/5 absolute w-full pointer-events-none" style={{ top: `${i * HOUR_HEIGHT}px` }} />
+             <div key={i} className="border-t border-white/5 absolute w-full pointer-events-none" style={{ top: `${i * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }} />
            ))}
            {isSameDay(currentDate, new Date()) && (
               <div className="absolute left-0 right-0 border-t-2 border-red-500 z-10 flex items-center pointer-events-none" style={{ top: `${(new Date().getHours() - START_HOUR + new Date().getMinutes()/60) * HOUR_HEIGHT}px` }}>
@@ -418,8 +527,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
              const top = (startHour - START_HOUR) * HOUR_HEIGHT;
              const height = (endHour - startHour) * HOUR_HEIGHT;
              return (
-               <div key={task.id} onClick={() => handleOpenEdit(task)} className="absolute w-full p-1 z-20" style={{ top: `${top}px`, height: `${height}px` }}>
-                 <div className={`h-full w-full rounded-2xl border p-4 shadow-lg flex flex-col justify-between overflow-hidden ${
+               <div key={task.id} 
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, task.id)}
+                    onDragEnd={() => setDraggedTaskId(null)}
+                    onClick={() => handleOpenEdit(task)} 
+                    className={`absolute w-full p-1 z-20 cursor-move transition-opacity ${draggedTaskId === task.id ? 'opacity-40 scale-[0.98]' : ''}`} 
+                    style={{ top: `${top}px`, height: `${height}px` }}>
+                 <div className={`h-full w-full rounded-2xl border p-4 shadow-lg flex flex-col justify-between overflow-hidden cursor-pointer ${
                     task.status === 'Completed' ? 'bg-green-600 border-green-500 text-white' : 
                     task.status === 'Confirmed' ? 'bg-blue-600 border-blue-500 text-white' : 
                     'bg-red-600 border-red-500 text-white'
@@ -467,7 +582,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
           const dayTasks = filteredTasks.filter(t => isSameDay(t.start, day));
           const isToday = isSameDay(day, new Date());
           return (
-            <div key={idx} className={`bg-slate-800 rounded-3xl p-5 border-2 transition-all ${isToday ? 'border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.1)]' : 'border-white/10'}`}>
+            <div 
+              key={idx} 
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-slate-700', 'border-blue-500'); }}
+              onDragLeave={(e) => { e.currentTarget.classList.remove('bg-slate-700', 'border-blue-500'); }}
+              onDrop={(e) => handleDropOnWeekDay(e, day)}
+              className={`bg-slate-800 rounded-3xl p-5 border-2 transition-all ${isToday ? 'border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.1)]' : 'border-white/10'}`}
+            >
               <div className="flex justify-between items-center mb-4">
                 <div>
                   <h4 className={`text-sm md:text-lg font-black uppercase tracking-widest ${isToday ? 'text-red-500' : 'text-slate-100'}`}>
@@ -478,9 +599,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                 {dayTasks.length > 0 && <span className="bg-slate-900 text-blue-400 text-[10px] md:text-xs font-black px-3 py-1 rounded-full border border-white/10">{dayTasks.length} akce</span>}
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-2 min-h-[50px]">
                 {dayTasks.length > 0 ? dayTasks.map(task => (
-                  <div key={task.id} onClick={() => handleOpenEdit(task)} className={`p-3 md:p-4 rounded-xl border flex items-center justify-between group cursor-pointer transition-all ${task.status === 'Completed' ? 'bg-green-900/20 border-green-500/30 hover:bg-green-900/30' : 'bg-slate-900/50 border-white/5 hover:bg-slate-900'}`}>
+                  <div 
+                    key={task.id} 
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, task.id)}
+                    onDragEnd={() => setDraggedTaskId(null)}
+                    onClick={() => handleOpenEdit(task)} 
+                    className={`p-3 md:p-4 rounded-xl border flex items-center justify-between group cursor-move transition-all ${draggedTaskId === task.id ? 'opacity-40 scale-[0.98]' : ''} ${task.status === 'Completed' ? 'bg-green-900/20 border-green-500/30 hover:bg-green-900/30' : 'bg-slate-900/50 border-white/5 hover:bg-slate-900'}`}
+                  >
                     <div className="flex items-center gap-3">
                       <div className={`w-1.5 h-1.5 md:w-2 md:h-2 rounded-full ${task.status === 'Completed' ? 'bg-green-500' : task.status === 'Confirmed' ? 'bg-blue-500' : 'bg-red-500'}`} />
                       <div>
@@ -687,15 +815,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Hledat zakázku, klienta, adresu..."
-            className="w-full bg-slate-900 border-none rounded-2xl py-4 pl-12 pr-4 text-sm text-white placeholder-slate-600 focus:ring-2 focus:ring-blue-500/50 transition-all"
+            className="w-full bg-slate-900 border-none rounded-2xl py-3 md:py-4 pl-12 pr-4 text-xs md:text-sm text-white placeholder-slate-600 focus:ring-2 focus:ring-blue-500/50 transition-all outline-none"
           />
         </div>
         
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
           <select 
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-slate-700 outline-none focus:border-blue-500 appearance-none"
           >
             <option value="All">Všechny stavy</option>
             <option value="Pending">Čekající</option>
@@ -707,7 +835,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
           <select 
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value)}
-            className="bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-slate-700 outline-none focus:border-blue-500 appearance-none"
           >
             <option value="All">Všechny druhy</option>
             <option value="Stěhování">Stěhování</option>
@@ -719,7 +847,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
           <select 
             value={workerFilter}
             onChange={e => setWorkerFilter(e.target.value)}
-            className="bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 text-slate-300 text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border border-slate-700 outline-none focus:border-blue-500 appearance-none sm:col-span-2 lg:col-span-1"
           >
             <option value="All">Všichni řidiči</option>
             {workers.filter(w => w.role === 'Driver').map(w => (
