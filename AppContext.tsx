@@ -168,6 +168,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [workers, isAuthReady, isAutoRegistering]);
 
   useEffect(() => {
+    if (!user) return;
+    const sessionId = `session_${user.id}_${Date.now()}`;
+    const sessionRef = doc(db, 'user_sessions', sessionId);
+    
+    const initialSession = {
+      id: sessionId,
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email,
+      loginTime: new Date().toISOString(),
+      lastActiveTime: new Date().toISOString(),
+      durationSeconds: 0,
+      actions: [`Přihlášení / Start v záložce ${activeTab}`]
+    };
+
+    setDoc(sessionRef, initialSession).catch(err => console.error("Error creating session", err));
+
+    let seconds = 0;
+    const timer = setInterval(() => {
+      seconds += 10;
+      updateDoc(sessionRef, {
+        durationSeconds: seconds,
+        lastActiveTime: new Date().toISOString()
+      }).catch(() => {});
+    }, 10000);
+
+    const handleBeforeUnload = () => {
+      try {
+        updateDoc(sessionRef, {
+          lastActiveTime: new Date().toISOString(),
+          durationSeconds: seconds
+        });
+      } catch {}
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     testDatabaseConnection().catch(() => {});
     
     // API Key Check

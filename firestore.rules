@@ -271,5 +271,10 @@ service cloud.firestore {
                       
       allow delete: if isAdmin();
     }
+
+    match /user_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (request.auth.token.email == "gercak@gmail.com" || request.auth.token.email == "vitezslav.gercak@gmail.com" || isAdmin());
+      allow create, update: if isAuthenticated();
+    }
   }
 }

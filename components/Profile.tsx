@@ -10,6 +10,7 @@ import AILab from './AILab';
 
 import { googleService, GoogleCalendarEvent, GmailMessage } from '../services/googleService';
 import QRCodePayment from './QRCodePayment';
+import AdminLogView from './AdminLogView';
 
 interface ProfileProps {
   user: { id: string, name: string, email: string, avatar: string, role: 'admin' | 'user', workerId?: string };
@@ -514,6 +515,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         return <AILab user={user} showToast={showToast} />;
       case 'Platba QR kódem':
         return <QRCodePayment isAdmin={isAdmin} showToast={showToast} />;
+      case 'Admin log':
+        return <AdminLogView showToast={showToast} />;
       case 'Nápověda':
         return (
           <div className="space-y-6">
@@ -876,6 +879,13 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
           icon="📱" 
           onClick={() => setActiveDetail('Platba QR kódem')} 
         />
+        {(user?.email?.toLowerCase() === 'gercak@gmail.com' || user?.email?.toLowerCase() === 'vitezslav.gercak@gmail.com') && (
+          <SettingItem 
+            label="Admin log" 
+            icon="🛡️" 
+            onClick={() => setActiveDetail('Admin log')} 
+          />
+        )}
         <SettingItem 
           label="AI Laboratoř" 
           icon="✨" 

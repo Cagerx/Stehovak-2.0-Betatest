@@ -26,7 +26,12 @@ import {
   Bell,
   RefreshCw,
   Download,
-  Users
+  Users,
+  Clock,
+  Activity,
+  Shield,
+  FileText,
+  Printer
 } from 'lucide-react';
 
 export const COLORS = {
@@ -69,6 +74,11 @@ export const Icons = {
   Bell: Bell,
   RefreshCw: RefreshCw,
   Download: Download,
-  Users: Users
+  Users: Users,
+  Clock: Clock,
+  Activity: Activity,
+  Shield: Shield,
+  FileText: FileText,
+  Printer: Printer
 };
 
