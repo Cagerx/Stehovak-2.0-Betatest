@@ -1,16 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { AppTab, Worker, Vehicle, MoveTask, Transaction, CompanySettings, MaintenanceRequest, OperationType, AppNotification } from './types';
+import { AppTab, Worker, Vehicle, MoveTask, Transaction, CompanySettings, MaintenanceRequest, OperationType, AppNotification, AppRole, isManagementRole } from './types';
 import { db, auth, testDatabaseConnection, googleProvider } from './firebase';
-import { doc, getDoc, setDoc, collection, onSnapshot, query, where, orderBy, updateDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, onSnapshot, query, where, orderBy, updateDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { handleFirestoreError } from './App';
+import { getVehicleStkStatus, formatCzechDays } from './utils/stkUtils';
 
 export interface AppUser {
   id: string;
   name: string;
   email: string;
   avatar: string;
-  role: 'admin' | 'user';
+  role: AppRole;
   workerId?: string;
 }
 
@@ -106,8 +107,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const processUser = async () => {
       const adminEmails = ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com'];
+      const editorEmails = ['najzarj99@gmail.com'];
       const allowedUserEmails = ['kubienalubo@gmail.com', 'zdenekondo444@gmail.com'];
-      const isWhitelisted = adminEmails.includes(email.toLowerCase()) || allowedUserEmails.includes(email.toLowerCase());
+      const isWhitelisted = adminEmails.includes(email.toLowerCase()) || 
+                            editorEmails.includes(email.toLowerCase()) || 
+                            allowedUserEmails.includes(email.toLowerCase());
+
+      const isAdmin = adminEmails.includes(email.toLowerCase()) || matchingWorker?.id === '1';
+      const isEditor = editorEmails.includes(email.toLowerCase());
+      const approved = isAdmin || isEditor || allowedUserEmails.includes(email.toLowerCase()) || !!matchingWorker;
 
       if (!matchingWorker && !registrationInProgress.current && isAuthReady && isWhitelisted) {
         registrationInProgress.current = true;
@@ -120,9 +128,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           if (!workerSnap.exists()) {
             const newWorker: any = {
               id: newWorkerId,
-              name: firebaseUser.displayName || 'Nový člen týmu',
+              name: firebaseUser.displayName || (isEditor ? 'Editor (Matěj Najzar)' : 'Nový člen týmu'),
               phone: '',
-              role: 'Loader',
+              role: isEditor ? 'Boss' : 'Loader',
               status: 'Available'
             };
             if (email) newWorker.email = email;
@@ -139,19 +147,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         return;
       }
-
-      const isAdmin = adminEmails.includes(email.toLowerCase()) || matchingWorker?.id === '1';
-      const approved = isAdmin || allowedUserEmails.includes(email.toLowerCase()) || !!matchingWorker;
       
       setIsApproved(approved);
 
       if (approved) {
+        let assignedRole: AppRole = isAdmin ? 'admin' : (isEditor ? 'editor' : 'user');
+        if (email.toLowerCase() === 'stehovanimatej@gmail.com' || matchingWorker?.role === 'Boss') {
+          assignedRole = 'owner';
+        }
+
+        // Check if role is stored in Firestore
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            const savedRole = userDocSnap.data()?.role;
+            if (savedRole === 'owner' || savedRole === 'vlastník') {
+              assignedRole = 'owner';
+            } else if (savedRole === 'admin') {
+              assignedRole = 'admin';
+            } else if (savedRole === 'editor') {
+              assignedRole = 'editor';
+            }
+          }
+          if (!userDocSnap.exists() || userDocSnap.data()?.role !== assignedRole) {
+            await setDoc(userDocRef, {
+              role: assignedRole,
+              email: email
+            }, { merge: true });
+          }
+        } catch (syncErr) {
+          console.warn("User role sync warning:", syncErr);
+        }
+
         const newUser: AppUser = {
           id: firebaseUser.uid,
-          name: firebaseUser.displayName || matchingWorker?.name || 'Uživatel Stěhovák',
+          name: firebaseUser.displayName || matchingWorker?.name || (assignedRole === 'owner' ? 'Vlastník' : isEditor ? 'Editor' : 'Uživatel Stěhovák'),
           email: email,
           avatar: firebaseUser.photoURL || 'https://picsum.photos/seed/user/200/200',
-          role: isAdmin ? 'admin' : 'user',
+          role: assignedRole,
           workerId: matchingWorker?.id
         };
 
@@ -316,6 +350,53 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubNotifications();
     };
   }, [user?.id, isAuthReady]);
+
+  // Automatické generování notifikace, pokud se přiblíží datum technické kontroly (STK) u vozidla (< 30 dní)
+  useEffect(() => {
+    if (!user?.id || !isAuthReady || vehicles.length === 0) return;
+
+    const checkVehicleStkNotifications = async () => {
+      for (const vehicle of vehicles) {
+        const stkStatus = getVehicleStkStatus(vehicle.stkExpiration);
+        if (!stkStatus || !stkStatus.isExpiringSoon) continue;
+
+        // Deterministické ID dokumentu: každé vozidlo pro konkrétní termín a uživatele vygeneruje notifikaci pouze jednou
+        const safeDate = (vehicle.stkExpiration || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const notifDocId = `stk_${vehicle.id}_${user.id}_${safeDate}`;
+        const notifRef = doc(db, 'notifications', notifDocId);
+
+        try {
+          const snap = await getDoc(notifRef);
+          if (!snap.exists()) {
+            const isExpired = stkStatus.isExpired;
+            const days = stkStatus.daysRemaining;
+
+            const title = isExpired ? '⚠️ Propadlá STK vozidla' : '⚠️ Blíží se termín STK';
+            const message = isExpired
+              ? `Upozornění: STK u vozidla ${vehicle.model} (${vehicle.plate}) vypršela před ${formatCzechDays(days)} (${stkStatus.formattedDate})!`
+              : days === 0
+                ? `Upozornění: STK u vozidla ${vehicle.model} (${vehicle.plate}) končí dnes (${stkStatus.formattedDate})!`
+                : `Upozornění: STK u vozidla ${vehicle.model} (${vehicle.plate}) vyprší za ${formatCzechDays(days)} (${stkStatus.formattedDate}).`;
+
+            await setDoc(notifRef, {
+              id: notifDocId,
+              userId: user.id,
+              title,
+              message,
+              vehicleId: vehicle.id,
+              read: false,
+              type: 'stk_warning',
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (err) {
+          console.warn('Chyba při automatické synchronizaci STK notifikace:', vehicle.id, err);
+        }
+      }
+    };
+
+    checkVehicleStkNotifications();
+  }, [vehicles, user?.id, isAuthReady]);
 
   const markNotificationAsRead = async (id: string) => {
     try {

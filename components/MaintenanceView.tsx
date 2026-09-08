@@ -2,14 +2,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Icons, COLORS } from '../constants';
-import { MaintenanceRequest, OperationType } from '../types';
+import { MaintenanceRequest, OperationType, isManagementRole, AppRole } from '../types';
 import { db } from '../firebase';
 import { doc, setDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
 
 interface MaintenanceViewProps {
   maintenanceRequests: MaintenanceRequest[];
-  user: { id: string, name: string, email: string, avatar: string, role: 'admin' | 'user' };
+  user: { id: string, name: string, email: string, avatar: string, role: AppRole };
   showToast: (message: string) => void;
 }
 
@@ -17,7 +17,7 @@ const MaintenanceView: React.FC<MaintenanceViewProps> = ({ maintenanceRequests, 
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
   const [newMaintenanceReason, setNewMaintenanceReason] = useState('');
   const [isSavingMaintenance, setIsSavingMaintenance] = useState(false);
-  const isAdmin = user.role === 'admin';
+  const isAdmin = isManagementRole(user.role);
 
   const handleAddMaintenance = async () => {
     if (!newMaintenanceReason.trim()) return;

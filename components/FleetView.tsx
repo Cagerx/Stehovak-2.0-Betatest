@@ -1,10 +1,11 @@
 
 import React, { useState, useRef } from 'react';
-import { Worker, Vehicle, MoveTask, OperationType } from '../types';
+import { Worker, Vehicle, MoveTask, OperationType, isManagementRole } from '../types';
 import { Icons } from '../constants';
 import { db } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
+import { getVehicleStkStatus, formatCzechDays } from '../utils/stkUtils';
 
 interface FleetViewProps {
   workers: Worker[];
@@ -18,6 +19,12 @@ interface FleetViewProps {
 
 const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, setVehicles, tasks, user, showToast }) => {
   const [activeSubTab, setActiveSubTab] = useState<'workers' | 'vehicles'>('workers');
+
+  const canManageFleet = Boolean(
+    isManagementRole(user?.role) || 
+    (user?.email && ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com', 'najzarj99@gmail.com'].includes(user.email.toLowerCase())) ||
+    workers.find(w => w.id === user?.workerId)?.role === 'Boss'
+  );
   
   // Modal states
   const [showVehicleModal, setShowVehicleModal] = useState(false);
@@ -237,21 +244,35 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                   <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{w.name}</h4>
                   <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5 truncate">{getRoleLabel(w.role)}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
-                    isAvailable 
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                      : onTask 
-                        ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                        : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
-                  }`}>
-                    {statusLabel}
-                  </span>
-                  {onTask && (
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
-                      <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
+                      isAvailable 
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                        : onTask 
+                          ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
+                          : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+                    }`}>
+                      {statusLabel}
+                    </span>
+                    {onTask && (
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
+                        <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
+                      </div>
+                    )}
+                  </div>
+                  {canManageFleet && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteWorker(w.id);
+                      }}
+                      className="p-2 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-xl transition-all"
+                      title="Vymazat člena týmu"
+                    >
+                      <Icons.Trash className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
               </div>
@@ -262,6 +283,7 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
             const onTask = isVehicleOnTask(v.id);
             const statusLabel = onTask ? 'Na zakázce' : getStatusLabel(v.status);
             const isReady = !onTask && (v.status === 'Ready' || v.status === 'In Use');
+            const stk = getVehicleStkStatus(v.stkExpiration);
             
             return (
               <div key={v.id} onClick={() => handleOpenVehicle(v)} className="bg-slate-800 p-3 sm:p-4 rounded-[1.5rem] sm:rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
@@ -276,23 +298,49 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{v.model}</h4>
-                  <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase mt-0.5 truncate">{v.plate}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase truncate">{v.plate}</p>
+                    {stk && stk.isExpiringSoon && (
+                      <span className={`inline-flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${
+                        stk.isExpired 
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}>
+                        <span>⚠️</span>
+                        <span>{stk.isExpired ? 'STK propadlá' : `STK za ${formatCzechDays(stk.daysRemaining)}`}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
-                    isReady 
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                      : onTask 
-                        ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                        : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
-                  }`}>
-                    {statusLabel}
-                  </span>
-                  {onTask && (
-                    <div className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
-                      <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
+                      isReady 
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                        : onTask 
+                          ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
+                          : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+                    }`}>
+                      {statusLabel}
+                    </span>
+                    {onTask && (
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
+                        <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
+                      </div>
+                    )}
+                  </div>
+                  {canManageFleet && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteVehicle(v.id);
+                      }}
+                      className="p-2 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-xl transition-all"
+                      title="Vymazat vozidlo"
+                    >
+                      <Icons.Trash className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
               </div>
@@ -331,8 +379,8 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                   <select 
                     value={selectedWorker.role} 
                     onChange={e => setSelectedWorker({...selectedWorker, role: e.target.value as any})} 
-                    className={`w-full bg-slate-800 rounded-xl p-3 text-white border-none appearance-none ${user?.role !== 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    disabled={user?.role !== 'admin'}
+                    className={`w-full bg-slate-800 rounded-xl p-3 text-white border-none appearance-none ${!canManageFleet ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!canManageFleet}
                   >
                     <option value="Loader">Stěhovák</option>
                     <option value="Driver">Řidič</option>
@@ -390,12 +438,14 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
               })()}
 
               <div className="flex gap-4 mt-4">
-                {selectedWorker.id && user?.role === 'admin' && (
+                {selectedWorker.id && canManageFleet && (
                   <button 
                     onClick={() => deleteWorker(selectedWorker.id!)} 
-                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                    title="Vymazat člena týmu"
                   >
                     <Icons.Trash className="w-5 h-5" />
+                    <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">Vymazat</span>
                   </button>
                 )}
                 <button onClick={saveWorker} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20">Upload Profile</button>
@@ -470,7 +520,20 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-500 uppercase px-1">Platnost STK</label>
+                            <div className="flex items-center justify-between px-1">
+                              <label className="text-[10px] font-black text-slate-500 uppercase">Platnost STK</label>
+                              {(() => {
+                                const mStk = getVehicleStkStatus(selectedVehicle.stkExpiration);
+                                if (!mStk) return null;
+                                return (
+                                  <span className={`text-[8px] font-black uppercase ${
+                                    mStk.isExpired ? 'text-red-400' : mStk.isExpiringSoon ? 'text-amber-400' : 'text-slate-400'
+                                  }`}>
+                                    {mStk.isExpired ? '⚠️ Propadlá' : mStk.isExpiringSoon ? `⚠️ Za ${formatCzechDays(mStk.daysRemaining)}` : `OK (${formatCzechDays(mStk.daysRemaining)})`}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <input 
                                 type="date"
                                 value={selectedVehicle.stkExpiration || ''} 
@@ -509,12 +572,14 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
               <input type="file" ref={carImageRef} hidden onChange={e => handleImage(e, 'car')} />
               <input type="file" ref={techCertImageRef} hidden onChange={e => handleImage(e, 'tech')} />
               <div className="flex gap-4 mt-4">
-                {selectedVehicle.id && user?.role === 'admin' && (
+                {selectedVehicle.id && canManageFleet && (
                   <button 
                     onClick={() => deleteVehicle(selectedVehicle.id!)} 
-                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                    title="Vymazat vozidlo"
                   >
                     <Icons.Trash className="w-5 h-5" />
+                    <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">Vymazat</span>
                   </button>
                 )}
                 <button onClick={saveVehicle} className="flex-1 bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20">Uložit Vozidlo</button>

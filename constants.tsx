@@ -31,7 +31,13 @@ import {
   Activity,
   Shield,
   FileText,
-  Printer
+  Printer,
+  GripVertical,
+  GripHorizontal,
+  Move,
+  PanelLeft,
+  PanelRight,
+  PanelBottom
 } from 'lucide-react';
 
 export const COLORS = {
@@ -79,6 +85,12 @@ export const Icons = {
   Activity: Activity,
   Shield: Shield,
   FileText: FileText,
-  Printer: Printer
+  Printer: Printer,
+  GripVertical: GripVertical,
+  GripHorizontal: GripHorizontal,
+  Move: Move,
+  PanelLeft: PanelLeft,
+  PanelRight: PanelRight,
+  PanelBottom: PanelBottom
 };
 

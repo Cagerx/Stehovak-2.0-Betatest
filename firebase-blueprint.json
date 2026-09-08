@@ -104,6 +104,21 @@
         "status": { "type": "string" }
       },
       "required": ["id", "reason", "userId", "userName", "createdAt", "status"]
+    },
+    "AppNotification": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "taskId": { "type": "string" },
+        "vehicleId": { "type": "string" }
+      },
+      "required": ["userId", "title", "message", "read", "type", "createdAt"]
     }
   },
   "firestore": {
@@ -130,6 +145,10 @@
     "/maintenanceRequests/{requestId}": {
       "schema": { "$ref": "MaintenanceRequest" },
       "description": "Collection of maintenance requests."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "AppNotification" },
+      "description": "Collection of user notifications."
     }
   }
 }

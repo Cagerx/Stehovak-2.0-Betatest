@@ -1,4 +1,21 @@
 
+export type AppRole = 'admin' | 'editor' | 'owner' | 'user';
+
+export const isManagementRole = (role?: string): boolean => {
+  if (!role) return false;
+  const r = role.toLowerCase();
+  return r === 'admin' || r === 'editor' || r === 'owner' || r === 'vlastník';
+};
+
+export interface AppUser {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  role: AppRole;
+  workerId?: string;
+}
+
 export interface Worker {
   id: string;
   name: string;
@@ -87,8 +104,9 @@ export interface AppNotification {
   message: string;
   createdAt: Date;
   read: boolean;
-  type: 'task_assigned' | 'task_changed' | 'system';
+  type: 'task_assigned' | 'task_changed' | 'system' | 'stk_warning';
   taskId?: string;
+  vehicleId?: string;
 }
 
 export enum AppTab {

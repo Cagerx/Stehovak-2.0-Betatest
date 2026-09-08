@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MoveTask, Worker, Vehicle, OperationType } from '../types';
+import { MoveTask, Worker, Vehicle, OperationType, AppTab, isManagementRole } from '../types';
 import { Icons } from '../constants';
 import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
+import { useAppContext } from '../AppContext';
+import { getVehicleStkStatus, formatCzechDays } from '../utils/stkUtils';
 
 interface DashboardProps {
   tasks: MoveTask[];
@@ -12,14 +14,31 @@ interface DashboardProps {
   vehicles: Vehicle[];
   user: {
     workerId?: string;
-    role: 'admin' | 'user';
+    role: string;
+    email?: string;
   };
   showToast: (message: string) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, showToast }) => {
+  const { setActiveTab } = useAppContext();
   const [selectedTask, setSelectedTask] = useState<MoveTask | null>(null);
   const [isTabletOrDesktop, setIsTabletOrDesktop] = useState(window.innerWidth >= 768);
+
+  const canManage = Boolean(
+    isManagementRole(user?.role) ||
+    (user?.email && ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com', 'najzarj99@gmail.com'].includes(user.email.toLowerCase())) ||
+    workers.find(w => w.id === user?.workerId)?.role === 'Boss'
+  );
+
+  const expiringStkVehicles = useMemo(() => {
+    return vehicles
+      .map(v => ({ vehicle: v, stk: getVehicleStkStatus(v.stkExpiration) }))
+      .filter((item): item is { vehicle: Vehicle; stk: NonNullable<ReturnType<typeof getVehicleStkStatus>> } => 
+        item.stk !== null && item.stk.isExpiringSoon
+      )
+      .sort((a, b) => a.stk.daysRemaining - b.stk.daysRemaining);
+  }, [vehicles]);
 
   useEffect(() => {
     const handleResize = () => setIsTabletOrDesktop(window.innerWidth >= 768);
@@ -90,11 +109,22 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
     }
   };
 
+  const deleteTask = async (taskId: string) => {
+    if (!window.confirm("Opravdu chcete tuto zakázku smazat?")) return;
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+      showToast("Zakázka byla smazána");
+      setSelectedTask(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `tasks/${taskId}`);
+    }
+  };
+
   const myTasksForList = useMemo(() => {
-    return user.role === 'admin' 
+    return canManage 
       ? tasks 
       : tasks.filter(t => t.assignedWorkers.includes(user.workerId || ''));
-  }, [tasks, user.role, user.workerId]);
+  }, [tasks, canManage, user.workerId]);
 
   const todayTasks = useMemo(() => 
     myTasksForList
@@ -255,6 +285,41 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
 
   return (
     <div className="space-y-10">
+      {/* STK Warning Widget */}
+      {expiringStkVehicles.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 md:p-6 rounded-[2.5rem] bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/30 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl"
+        >
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30 text-xl shadow-inner">
+              ⚠️
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs md:text-sm font-black text-amber-400 uppercase tracking-wider">
+                  Upozornění na technickou kontrolu (STK)
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/25 text-amber-300 border border-amber-500/40">
+                  {expiringStkVehicles.length} {expiringStkVehicles.length === 1 ? 'vozidlo' : expiringStkVehicles.length < 5 ? 'vozidla' : 'vozidel'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                {expiringStkVehicles.map(item => `${item.vehicle.model} (${item.vehicle.plate}): ${item.stk.isExpired ? 'propadlá' : `zbývá ${formatCzechDays(item.stk.daysRemaining)}`}`).join(' • ')}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setActiveTab(AppTab.FLEET)}
+            className="shrink-0 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center gap-2 self-end md:self-center cursor-pointer active:scale-95"
+          >
+            <Icons.Truck className="w-4 h-4" />
+            Vozový park
+          </button>
+        </motion.div>
+      )}
+
       {myActiveTask && (
         <motion.div 
           initial={{ opacity: 0, scale: 0.9 }}
@@ -299,7 +364,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
       )}
 
       {/* Crew Utilization Widget */}
-      {user.role === 'admin' && (
+      {canManage && (
         <section className="bg-slate-800 p-6 md:p-8 rounded-[3rem] border border-white/10 relative overflow-hidden shadow-xl">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-sm md:text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
@@ -678,7 +743,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
               )}
 
               <div className="flex flex-col gap-3">
-                {(user.role === 'admin' || (user.workerId && selectedTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && selectedTask.status !== 'Completed' && (
+                {(user.role === 'admin' || user.role === 'editor' || (user.workerId && selectedTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && selectedTask.status !== 'Completed' && (
                   <button 
                     onClick={async () => {
                       await updateTaskStatus(selectedTask.id, 'Completed');
@@ -688,6 +753,15 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, workers, vehicles, user, s
                     className="w-full bg-green-600 text-white font-black py-5 rounded-[2rem] shadow-xl shadow-green-600/20 transition-all active:scale-95 text-sm uppercase tracking-widest hover:bg-green-500 flex items-center justify-center gap-2 animate-bounce-subtle"
                   >
                     <Icons.Check className="w-5 h-5" /> Dokončit zakázku (Hotovo)
+                  </button>
+                )}
+                
+                {canManage && (
+                  <button 
+                    onClick={() => deleteTask(selectedTask.id)}
+                    className="w-full bg-red-600/10 text-red-500 font-black py-4 rounded-[2rem] border border-red-500/20 transition-all active:scale-95 text-sm uppercase tracking-widest hover:bg-red-600 hover:text-white flex items-center justify-center gap-2"
+                  >
+                    <Icons.Trash className="w-5 h-5" /> Vymazat zakázku
                   </button>
                 )}
                 

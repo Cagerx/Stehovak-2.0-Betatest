@@ -86,8 +86,18 @@ service cloud.firestore {
       return isAuthenticated() &&
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'owner', 'vlastník']) ||
           ((request.auth.token.email == "vitezslav.gercak@gmail.com" || request.auth.token.email == "stehovanimatej@gmail.com") && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isEditor() {
+      return isAuthenticated() &&
+        (
+          isAdmin() ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor', 'owner', 'vlastník']) ||
+          ((request.auth.token.email == "najzarj99@gmail.com") && request.auth.token.email_verified == true)
         );
     }
 
@@ -120,7 +130,7 @@ service cloud.firestore {
              isValidString(data.id, 1, 50) &&
              isValidString(data.name, 1, 100) &&
              isValidString(data.phone, 0, 20) &&
-             data.role in ['Driver', 'Loader', 'Specialist'] &&
+             data.role in ['Driver', 'Loader', 'Specialist', 'Boss'] &&
              data.status in ['Available', 'On Task', 'Off'] &&
              (!('email' in data) || isValidEmail(data.email)) &&
              (!('photo' in data) || (isValidUrl(data.photo) && data.photo.size() < 1000)) &&
@@ -189,6 +199,19 @@ service cloud.firestore {
              data.status in ['Pending', 'Resolved'];
     }
 
+    function isValidNotification(data) {
+      return hasRequiredFields(['userId', 'title', 'message', 'read', 'type', 'createdAt']) &&
+             isValidString(data.userId, 1, 128) &&
+             isValidString(data.title, 1, 200) &&
+             isValidString(data.message, 1, 1000) &&
+             data.read is bool &&
+             data.type in ['task_assigned', 'task_changed', 'system', 'stk_warning'] &&
+             data.createdAt is timestamp &&
+             (!('id' in data) || isValidString(data.id, 1, 100)) &&
+             (!('taskId' in data) || isValidString(data.taskId, 0, 100)) &&
+             (!('vehicleId' in data) || isValidString(data.vehicleId, 0, 100));
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -214,67 +237,80 @@ service cloud.firestore {
                       request.resource.data.userId == request.auth.uid &&
                       request.resource.data.status == 'Pending' &&
                       request.resource.data.createdAt == request.time;
-      allow update: if isAdmin() && 
+      allow update: if (isAdmin() || isEditor()) && 
                       isValidMaintenanceRequest(request.resource.data) &&
                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
                       request.resource.data.status in ['Pending', 'Resolved'];
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isEditor();
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin() || isEditor();
       allow create: if isAuthenticated() && isOwner(userId) && 
                       hasOnlyAllowedFields(['role', 'email']) &&
-                      request.resource.data.role == 'user' &&
+                      ((request.resource.data.role == 'editor' && (request.auth.token.email == "najzarj99@gmail.com" || isAdmin())) ||
+                       (request.resource.data.role == 'admin' && isAdmin()) ||
+                       request.resource.data.role == 'user') &&
                       isValidEmail(request.resource.data.email);
-      allow update: if isAdmin() && hasOnlyAllowedFields(['role', 'email']) &&
-                      request.resource.data.role in ['admin', 'user'];
+      allow update: if (isAdmin() || (isOwner(userId) && request.auth.token.email == "najzarj99@gmail.com" && request.resource.data.role == 'editor')) && 
+                      hasOnlyAllowedFields(['role', 'email']) &&
+                      request.resource.data.role in ['admin', 'editor', 'owner', 'vlastník', 'user'];
     }
 
     match /workers/{workerId} {
       allow read: if isAuthenticated();
-      allow create: if (isOwner(workerId) || isAdmin()) && isValidWorker(request.resource.data);
-      allow update: if isAdmin() && isValidWorker(request.resource.data);
-      allow delete: if isAdmin();
+      allow create: if (isOwner(workerId) || isAdmin() || isEditor()) && isValidWorker(request.resource.data);
+      allow update: if (isAdmin() || isEditor()) && isValidWorker(request.resource.data);
+      allow delete: if isAdmin() || isEditor();
     }
 
     match /vehicles/{vehicleId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin() && isValidVehicle(request.resource.data);
+      allow create, update: if (isAdmin() || isEditor()) && isValidVehicle(request.resource.data);
+      allow delete: if isAdmin() || isEditor();
     }
 
     match /tasks/{taskId} {
-      // Access is granted to admins or assigned workers
-      // Note: assignedWorkers should contain UIDs for best security
-      allow read: if isAdmin() || isAuthenticated(); 
+      // Access is granted to admins, editors, or authenticated workers
+      allow read: if isAdmin() || isEditor() || isAuthenticated(); 
       
       allow create: if isAuthenticated() && isValidTask(request.resource.data);
       
-      allow update: if (isAdmin() && isValidTask(request.resource.data)) ||
+      allow update: if ((isAdmin() || isEditor()) && isValidTask(request.resource.data)) ||
                       (isAuthenticated() && 
                        isValidTask(request.resource.data) &&
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
                        request.resource.data.status in ['Pending', 'Confirmed', 'In Progress', 'Completed']);
                        
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isEditor();
     }
 
     match /transactions/{transactionId} {
       allow read: if isAuthenticated();
       
       allow create: if isAuthenticated() && isValidTransaction(request.resource.data) && 
-                      (request.resource.data.userId == request.auth.uid || isAdmin());
+                      (request.resource.data.userId == request.auth.uid || isAdmin() || isEditor());
                       
-      allow update: if (isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid)) && 
+      allow update: if (isAdmin() || isEditor() || (isAuthenticated() && resource.data.userId == request.auth.uid)) && 
                       isValidTransaction(request.resource.data) &&
                       request.resource.data.userId == resource.data.userId;
                       
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isEditor();
     }
 
     match /user_sessions/{sessionId} {
       allow read: if isAuthenticated() && (request.auth.token.email == "gercak@gmail.com" || request.auth.token.email == "vitezslav.gercak@gmail.com" || isAdmin());
       allow create, update: if isAuthenticated();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || isEditor());
+      allow create: if isAuthenticated() && isValidNotification(request.resource.data);
+      allow update: if isAuthenticated() && 
+                      (resource.data.userId == request.auth.uid || isAdmin() || isEditor()) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+                      request.resource.data.read is bool;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || isEditor());
     }
   }
 }

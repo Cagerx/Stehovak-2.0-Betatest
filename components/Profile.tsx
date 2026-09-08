@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Icons, COLORS } from '../constants';
-import { Transaction, MoveTask, Worker, Vehicle, CompanySettings, OperationType } from '../types';
+import { Transaction, MoveTask, Worker, Vehicle, CompanySettings, OperationType, AppRole, isManagementRole } from '../types';
 import { db } from '../firebase';
 import { doc, setDoc, Timestamp, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
@@ -13,7 +13,7 @@ import QRCodePayment from './QRCodePayment';
 import AdminLogView from './AdminLogView';
 
 interface ProfileProps {
-  user: { id: string, name: string, email: string, avatar: string, role: 'admin' | 'user', workerId?: string };
+  user: { id: string, name: string, email: string, avatar: string, role: AppRole, workerId?: string };
   onLogout: () => void;
   transactions: Transaction[];
   setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>;
@@ -54,7 +54,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
     };
   });
 
-  const isAdmin = user.role === 'admin';
+  const isAdmin = isManagementRole(user.role);
 
   const updateNotification = (key: string, val: boolean) => {
     const newSettings = { ...notifications, [key]: val };
@@ -836,7 +836,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onLogout, transactions, setTran
         </div>
         <div className="flex flex-col items-center gap-1">
            <h2 className="text-2xl font-black text-white tracking-tighter uppercase">{user.name}</h2>
-           {isAdmin && <span className="text-[8px] bg-red-600 text-white px-3 py-0.5 rounded-full font-black uppercase tracking-widest">Administrátor</span>}
+           {user.role === 'owner' && <span className="text-[8px] bg-amber-500 text-slate-950 px-3 py-0.5 rounded-full font-black uppercase tracking-widest">Vlastník</span>}
+           {user.role === 'admin' && <span className="text-[8px] bg-red-600 text-white px-3 py-0.5 rounded-full font-black uppercase tracking-widest">Administrátor</span>}
+           {user.role === 'editor' && <span className="text-[8px] bg-blue-600 text-white px-3 py-0.5 rounded-full font-black uppercase tracking-widest">Editor</span>}
         </div>
         <p className="text-white/50 text-sm font-bold uppercase tracking-widest mt-1">{user.email}</p>
         

@@ -6,7 +6,7 @@ import { Icons } from '../constants';
 import { db } from '../firebase';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
-import { MoveTask, OperationType } from '../types';
+import { MoveTask, OperationType, AppRole } from '../types';
 
 // Helper functions for Audio
 function decode(base64: string) {
@@ -41,7 +41,7 @@ async function decodeAudioData(
 interface AILabProps {
   user: {
     workerId?: string;
-    role: 'admin' | 'user';
+    role: AppRole;
   };
   showToast: (message: string) => void;
 }

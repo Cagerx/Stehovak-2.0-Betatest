@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls, useMotionValue } from 'motion/react';
 import { AppTab, OperationType } from './types';
 import { Icons, COLORS } from './constants';
 import Dashboard from './components/Dashboard';
@@ -59,6 +59,145 @@ const LOGO_URL = "/logo.png";
 
 const App: React.FC = () => {
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [isDesktop, setIsDesktop] = React.useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : false);
+  const [isDraggingNav, setIsDraggingNav] = React.useState(false);
+  const navRef = React.useRef<HTMLElement | null>(null);
+  const navDragControls = useDragControls();
+
+  // Initial free position and orientation
+  const initialNav = React.useMemo(() => {
+    if (typeof window === 'undefined') return { x: 200, y: 600, isVertical: false };
+    try {
+      const saved = localStorage.getItem('stehovak_nav_free_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          const isVert = !!parsed.isVertical;
+          const w = isVert ? 74 : 620;
+          const h = isVert ? 440 : 72;
+          const clampedX = Math.max(16, Math.min(window.innerWidth - w - 16, parsed.x));
+          const clampedY = Math.max(16, Math.min(window.innerHeight - h - 16, parsed.y));
+          return { x: clampedX, y: clampedY, isVertical: isVert };
+        }
+      }
+    } catch (e) {}
+    const defX = Math.max(16, Math.round((window.innerWidth - 620) / 2));
+    const defY = Math.max(16, window.innerHeight - 92);
+    return { x: defX, y: defY, isVertical: false };
+  }, []);
+
+  const navX = useMotionValue(initialNav.x);
+  const navY = useMotionValue(initialNav.y);
+  const [isVertical, setIsVertical] = React.useState(initialNav.isVertical);
+
+  // Keep within bounds on window resize
+  React.useEffect(() => {
+    const handleResize = () => {
+      const desktop = window.innerWidth >= 768;
+      setIsDesktop(desktop);
+      if (desktop) {
+        const curX = navX.get();
+        const curY = navY.get();
+        const w = isVertical ? 74 : 620;
+        const h = isVertical ? 440 : 72;
+        const clampedX = Math.max(16, Math.min(window.innerWidth - w - 16, curX));
+        const clampedY = Math.max(16, Math.min(window.innerHeight - h - 16, curY));
+        navX.set(clampedX);
+        navY.set(clampedY);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isVertical, navX, navY]);
+
+  const handleDragEnd = () => {
+    setIsDraggingNav(false);
+    const curX = navX.get();
+    const curY = navY.get();
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    const width = isVertical ? 74 : (navRef.current?.offsetWidth || 620);
+    const height = isVertical ? (navRef.current?.offsetHeight || 440) : 72;
+
+    let clampedX = Math.max(16, Math.min(w - width - 16, curX));
+    let clampedY = Math.max(16, Math.min(h - height - 16, curY));
+
+    // When dragged to the side (left 32% or right 32%), enable vertical view
+    // Do NOT snap to the side edge; keep the exact clampedX position
+    const isLeftSide = clampedX < w * 0.32;
+    const isRightSide = (clampedX + width) > w * 0.68;
+    const isNearSide = isLeftSide || isRightSide;
+
+    let nextVertical = isVertical;
+
+    if (isNearSide && !isVertical) {
+      nextVertical = true;
+      setIsVertical(true);
+      const vertHeight = 440;
+      if (clampedY + vertHeight > h - 16) {
+        clampedY = Math.max(16, h - vertHeight - 16);
+      }
+    } else if (!isNearSide && isVertical && clampedY > h * 0.6) {
+      nextVertical = false;
+      setIsVertical(false);
+      const horizWidth = 620;
+      if (clampedX + horizWidth > w - 16) {
+        clampedX = Math.max(16, w - horizWidth - 16);
+      }
+    }
+
+    navX.set(clampedX);
+    navY.set(clampedY);
+
+    try {
+      localStorage.setItem(
+        'stehovak_nav_free_pos',
+        JSON.stringify({ x: clampedX, y: clampedY, isVertical: nextVertical })
+      );
+    } catch (e) {}
+  };
+
+  const toggleOrientation = () => {
+    const next = !isVertical;
+    setIsVertical(next);
+    const curX = navX.get();
+    const curY = navY.get();
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const targetW = next ? 74 : 620;
+    const targetH = next ? 440 : 72;
+
+    const clampedX = Math.max(16, Math.min(w - targetW - 16, curX));
+    const clampedY = Math.max(16, Math.min(h - targetH - 16, curY));
+
+    navX.set(clampedX);
+    navY.set(clampedY);
+
+    try {
+      localStorage.setItem(
+        'stehovak_nav_free_pos',
+        JSON.stringify({ x: clampedX, y: clampedY, isVertical: next })
+      );
+    } catch (e) {}
+  };
+
+  const resetToBottomCenter = () => {
+    setIsVertical(false);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const defX = Math.max(16, Math.round((w - 620) / 2));
+    const defY = Math.max(16, h - 92);
+    navX.set(defX);
+    navY.set(defY);
+    try {
+      localStorage.setItem(
+        'stehovak_nav_free_pos',
+        JSON.stringify({ x: defX, y: defY, isVertical: false })
+      );
+    } catch (e) {}
+  };
+
   const {
     activeTab, setActiveTab,
     user,
@@ -307,12 +446,24 @@ const App: React.FC = () => {
                             if (notif.taskId) {
                               setActiveTab(AppTab.CALENDAR);
                               setShowNotifications(false);
+                            } else if (notif.vehicleId || notif.type === 'stk_warning') {
+                              setActiveTab(AppTab.FLEET);
+                              setShowNotifications(false);
                             }
                           }}
-                          className={`p-4 border-b border-white/5 cursor-pointer transition-colors hover:bg-slate-700/50 ${notif.read ? 'opacity-50' : 'bg-blue-500/5'}`}
+                          className={`p-4 border-b border-white/5 cursor-pointer transition-colors hover:bg-slate-700/50 ${
+                            notif.read ? 'opacity-50' : notif.type === 'stk_warning' ? 'bg-amber-500/10' : 'bg-blue-500/5'
+                          }`}
                         >
                           <div className="flex justify-between items-start mb-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">{notif.title}</span>
+                            <div className="flex items-center gap-1.5">
+                              {notif.type === 'stk_warning' && <span className="text-amber-400">⚠️</span>}
+                              <span className={`text-[10px] font-black uppercase tracking-widest ${
+                                notif.type === 'stk_warning' ? 'text-amber-400' : 'text-blue-400'
+                              }`}>
+                                {notif.title}
+                              </span>
+                            </div>
                             <span className="text-[9px] font-bold text-slate-500">{notif.createdAt.toLocaleDateString('cs-CZ')}</span>
                           </div>
                           <p className="text-xs text-slate-300 font-medium leading-relaxed">{notif.message}</p>
@@ -361,7 +512,7 @@ const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-6 md:p-8 lg:p-12 pb-32 md:pb-40 w-full max-w-7xl mx-auto">
+      <main className="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-6 md:p-8 lg:p-12 pb-32 md:pb-36 w-full max-w-7xl mx-auto transition-all duration-300">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -416,20 +567,142 @@ const App: React.FC = () => {
         </AnimatePresence>
       </main>
 
-      <nav className="bg-slate-900/95 backdrop-blur-2xl border-t border-white/10 fixed bottom-0 md:bottom-8 left-0 right-0 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-auto w-full z-40 flex justify-around p-4 md:px-12 md:py-6 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] rounded-t-[35px] md:rounded-full md:border md:border-white/20 md:shadow-2xl md:gap-8">
-        <NavButton active={activeTab === AppTab.DASHBOARD} onClick={() => setActiveTab(AppTab.DASHBOARD)} icon={<Icons.Home />} label="Domů" />
-        <NavButton active={activeTab === AppTab.CALENDAR} onClick={() => setActiveTab(AppTab.CALENDAR)} icon={<Icons.Calendar />} label="Kalendář" />
-        <NavButton active={activeTab === AppTab.FLEET} onClick={() => setActiveTab(AppTab.FLEET)} icon={<Icons.Truck />} label="Flotila" />
+      {/* Main Navigation Bar - Floating & freely draggable without edge snapping */}
+      <motion.nav
+        ref={navRef as any}
+        drag={isDesktop}
+        dragControls={navDragControls}
+        dragListener={false}
+        dragMomentum={false}
+        onDragStart={() => setIsDraggingNav(true)}
+        onDragEnd={handleDragEnd}
+        style={isDesktop ? { x: navX, y: navY } : undefined}
+        onPointerDown={(e) => {
+          if (e.target === e.currentTarget && isDesktop) {
+            navDragControls.start(e);
+          }
+        }}
+        className={`bg-slate-900/95 backdrop-blur-2xl z-40 select-none ${
+          isDraggingNav ? 'ring-2 ring-blue-500/50 shadow-2xl scale-[1.01]' : 'shadow-2xl'
+        } ${
+          isDesktop
+            ? isVertical
+              ? 'fixed left-0 top-0 flex flex-col items-center p-2.5 border border-white/20 rounded-[28px] gap-2 max-h-[calc(100vh-32px)] overflow-y-auto no-scrollbar transition-shadow'
+              : 'fixed left-0 top-0 flex flex-row items-center justify-center p-3 md:px-5 md:py-3 border border-white/20 rounded-full md:gap-3 lg:gap-4 transition-shadow'
+            : 'fixed bottom-0 left-0 right-0 w-full flex flex-row items-center justify-around p-4 border-t border-white/10 rounded-t-[35px]'
+        }`}
+      >
+        {/* Desktop Handle: Drag Grip + Orientation Toggle + Reset Button */}
+        {isDesktop && (
+          isVertical ? (
+            <div 
+              onPointerDown={(e) => navDragControls.start(e)}
+              className="flex flex-col items-center gap-1.5 pb-2 mb-1 border-b border-white/10 cursor-grab active:cursor-grabbing group/drag w-full"
+              title="Přetáhněte panel kamkoliv na obrazovce"
+            >
+              <div className="p-1 rounded-md text-white/40 group-hover/drag:text-blue-400 transition-colors">
+                <Icons.Move className="w-4 h-4" />
+              </div>
+              <div 
+                className="flex items-center gap-1 bg-slate-800/90 p-0.5 rounded-md border border-white/5 shadow-inner"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={toggleOrientation}
+                  className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Přepnout na vodorovné zobrazení"
+                >
+                  <Icons.PanelBottom className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToBottomCenter}
+                  className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Vrátit dolů do středu"
+                >
+                  <Icons.RefreshCw className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div 
+              onPointerDown={(e) => navDragControls.start(e)}
+              className="flex items-center gap-2 pr-3 mr-1 border-r border-white/10 cursor-grab active:cursor-grabbing group/drag"
+              title="Přetáhněte panel kamkoliv na obrazovce"
+            >
+              <div className="p-1 rounded-md text-white/40 group-hover/drag:text-blue-400 transition-colors">
+                <Icons.Move className="w-4 h-4" />
+              </div>
+              <div 
+                className="flex items-center gap-1 bg-slate-800/90 p-0.5 rounded-md border border-white/5 shadow-inner"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  onClick={toggleOrientation}
+                  className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Přepnout na svislé zobrazení"
+                >
+                  <Icons.PanelLeft className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToBottomCenter}
+                  className="p-1 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                  title="Vrátit dolů do středu"
+                >
+                  <Icons.RefreshCw className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )
+        )}
+
+        <NavButton 
+          active={activeTab === AppTab.DASHBOARD} 
+          onClick={() => setActiveTab(AppTab.DASHBOARD)} 
+          icon={<Icons.Home />} 
+          label="Domů" 
+          isVertical={isDesktop && isVertical}
+        />
+        <NavButton 
+          active={activeTab === AppTab.CALENDAR} 
+          onClick={() => setActiveTab(AppTab.CALENDAR)} 
+          icon={<Icons.Calendar />} 
+          label="Kalendář" 
+          isVertical={isDesktop && isVertical}
+        />
+        <NavButton 
+          active={activeTab === AppTab.FLEET} 
+          onClick={() => setActiveTab(AppTab.FLEET)} 
+          icon={<Icons.Truck />} 
+          label="Flotila" 
+          isVertical={isDesktop && isVertical}
+        />
         <NavButton 
           active={activeTab === AppTab.ANALYSIS} 
           onClick={() => setActiveTab(AppTab.ANALYSIS)} 
           icon={<Icons.Sparkles />} 
           label="Analýza" 
-          disabled={user?.role !== 'admin'}
+          disabled={user?.role !== 'admin' && user?.role !== 'editor'}
+          isVertical={isDesktop && isVertical}
         />
-        <NavButton active={activeTab === AppTab.MAINTENANCE} onClick={() => setActiveTab(AppTab.MAINTENANCE)} icon={<Icons.Settings />} label="Údržba" />
-        <NavButton active={activeTab === AppTab.PROFILE} onClick={() => setActiveTab(AppTab.PROFILE)} icon={<Icons.User />} label="Více" />
-      </nav>
+        <NavButton 
+          active={activeTab === AppTab.MAINTENANCE} 
+          onClick={() => setActiveTab(AppTab.MAINTENANCE)} 
+          icon={<Icons.Settings />} 
+          label="Údržba" 
+          isVertical={isDesktop && isVertical}
+        />
+        <NavButton 
+          active={activeTab === AppTab.PROFILE} 
+          onClick={() => setActiveTab(AppTab.PROFILE)} 
+          icon={<Icons.User />} 
+          label="Více" 
+          isVertical={isDesktop && isVertical}
+        />
+      </motion.nav>
     </div>
   </ErrorBoundary>
   );
@@ -441,31 +714,60 @@ interface NavButtonProps {
   icon: React.ReactNode;
   label: string;
   disabled?: boolean;
+  isVertical?: boolean;
 }
 
-const NavButton: React.FC<NavButtonProps> = ({ active, onClick, icon, label, disabled }) => (
+const NavButton: React.FC<NavButtonProps> = ({ 
+  active, 
+  onClick, 
+  icon, 
+  label, 
+  disabled, 
+  isVertical = false 
+}) => (
   <button 
     onClick={disabled ? undefined : onClick}
-    className={`flex flex-col items-center justify-center gap-1.5 md:gap-2 transition-all relative group ${disabled ? 'cursor-not-allowed' : ''}`}
+    onPointerDown={(e) => e.stopPropagation()}
+    className={`flex flex-col items-center justify-center transition-all relative group select-none ${
+      disabled ? 'cursor-not-allowed' : 'cursor-pointer'
+    } ${
+      isVertical
+        ? 'w-14 h-14 md:w-16 md:h-16 rounded-2xl gap-1 p-1 hover:bg-white/5'
+        : 'gap-1.5 md:gap-2 px-2.5 py-1 rounded-xl hover:bg-white/5'
+    } ${
+      active && isVertical ? 'bg-blue-600/15 border border-blue-500/30' : ''
+    }`}
   >
-    <div className={`transition-all duration-300 [&>svg]:w-6 [&>svg]:h-6 md:[&>svg]:w-8 md:[&>svg]:h-8 ${
+    <div className={`transition-all duration-300 [&>svg]:w-6 [&>svg]:h-6 md:[&>svg]:w-7 md:[&>svg]:h-7 ${
       active 
-        ? (label === 'AI Lab' ? 'scale-110 -translate-y-1 text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'scale-110 -translate-y-1 text-white') 
+        ? (label === 'AI Lab' ? 'scale-105 text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.6)]' : 'scale-105 text-white drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]') 
         : `scale-100 ${disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white'}`
     }`}>
       {icon}
     </div>
-    <span className={`text-[10px] md:text-xs font-black uppercase tracking-wider transition-all duration-300 ${active ? 'opacity-100 text-white' : `opacity-100 ${disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white'}`}`}>
+    <span className={`text-[9px] md:text-[10px] font-black uppercase tracking-wider transition-all duration-300 ${
+      active ? 'opacity-100 text-white' : `opacity-100 ${disabled ? 'text-white/20' : 'text-white/40 group-hover:text-white'}`
+    }`}>
       {label}
     </span>
-    {active && (
+    {active && !isVertical && (
       <motion.div 
         layoutId="nav-active"
-        className="absolute -bottom-2 w-1 h-1 bg-white rounded-full"
+        className="absolute -bottom-1.5 w-1.5 h-1.5 bg-white rounded-full shadow-[0_0_6px_#fff]"
+      />
+    )}
+    {active && isVertical && (
+      <motion.div 
+        layoutId="nav-active-vertical"
+        className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa]"
       />
     )}
     {disabled && (
-      <div className="absolute bottom-full mb-4 opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 text-white text-[8px] font-black uppercase py-1.5 px-3 rounded-lg pointer-events-none whitespace-nowrap shadow-xl z-50">
+      <div className={`absolute opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 text-white text-[8px] font-black uppercase py-1.5 px-3 rounded-lg pointer-events-none whitespace-nowrap shadow-xl z-50 ${
+        isVertical
+          ? 'left-full ml-3 top-1/2 -translate-y-1/2'
+          : 'bottom-full mb-4 left-1/2 -translate-x-1/2'
+      }`}>
         Nemáte dostatečná oprávnění.
       </div>
     )}

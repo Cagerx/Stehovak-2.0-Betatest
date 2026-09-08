@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, DragEvent } from 'react';
-import { MoveTask, Worker, Vehicle, OperationType } from '../types';
+import { MoveTask, Worker, Vehicle, OperationType, isManagementRole } from '../types';
 import { Icons, COLORS } from '../constants';
 import { geminiService } from '../services/geminiService';
 import { db } from '../firebase';
@@ -14,8 +14,9 @@ interface CalendarViewProps {
   workers: Worker[];
   vehicles: Vehicle[];
   user: { 
-    role: 'admin' | 'user';
+    role: string;
     workerId?: string;
+    email?: string;
   };
   googleAccessToken: string | null;
   showToast: (message: string) => void;
@@ -28,6 +29,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  const canManageTasks = Boolean(
+    isManagementRole(user?.role) ||
+    (user?.email && ['vitezslav.gercak@gmail.com', 'stehovanimatej@gmail.com', 'admin@stehovak2.com', 'najzarj99@gmail.com'].includes(user.email.toLowerCase())) ||
+    workers.find(w => w.id === user?.workerId)?.role === 'Boss'
+  );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -636,7 +643,21 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                         </div>
                       </div>
                     </div>
-                    <span className="text-[10px] md:text-sm font-black text-white/30">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] md:text-sm font-black text-white/30">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</span>
+                      {canManageTasks && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteTask(task.id);
+                          }}
+                          className="p-1.5 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-lg transition-all"
+                          title="Vymazat zakázku"
+                        >
+                          <Icons.Trash className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )) : (
                   <p className="text-[10px] md:text-xs text-white/30 italic font-medium px-1">Žádné zakázky na tento den.</p>
@@ -666,9 +687,23 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                     <h4 className={`text-lg font-black transition-colors ${task.status === 'Completed' ? 'text-green-400 group-hover:text-green-300' : 'text-white group-hover:text-blue-400'}`}>{task.title}</h4>
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{task.customer}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-slate-300">{task.start.toLocaleDateString('cs-CZ')}</p>
-                    <p className="text-xs font-bold text-slate-500">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-sm font-black text-slate-300">{task.start.toLocaleDateString('cs-CZ')}</p>
+                      <p className="text-xs font-bold text-slate-500">{task.start.getHours()}:{task.start.getMinutes().toString().padStart(2, '0')}</p>
+                    </div>
+                    {canManageTasks && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTask(task.id);
+                        }}
+                        className="p-2 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-xl transition-all"
+                        title="Vymazat zakázku"
+                      >
+                        <Icons.Trash className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-4 text-[10px] font-black uppercase text-slate-400 border-t border-slate-700/50 pt-3 mt-auto">
@@ -742,7 +777,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
             Seznam
           </button>
         </div>
-        {user.role === 'admin' && (
+        {canManageTasks && (
           <div className="flex gap-2">
             <button 
               onClick={() => setShowQuickNote(!showQuickNote)} 
@@ -1124,7 +1159,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
               </div>
 
               <div className="flex flex-col gap-3 pt-4">
-                {isEditing && (user.role === 'admin' || (user.workerId && currentTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && currentTask.status !== 'Completed' && (
+                {isEditing && (user.role === 'admin' || user.role === 'editor' || (user.workerId && currentTask.assignedWorkers?.includes(user.workerId) && workers.find(w => w.id === user.workerId)?.role === 'Driver')) && currentTask.status !== 'Completed' && (
                   <button 
                     onClick={async () => {
                       const updatedTask = { ...currentTask, status: 'Completed' as const };
@@ -1151,12 +1186,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, setTasks, workers, v
                 
                 <div className="flex gap-4">
                   <button onClick={() => setShowModal(false)} className="flex-1 text-slate-500 font-black uppercase text-xs tracking-widest">Zrušit</button>
-                  {isEditing && user.role === 'admin' && (
+                  {isEditing && canManageTasks && (
                     <button 
                       onClick={() => deleteTask(currentTask.id!)} 
-                      className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"
+                      className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                      title="Vymazat zakázku"
                     >
                       <Icons.Trash className="w-5 h-5" />
+                      <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">Vymazat</span>
                     </button>
                   )}
                   <button onClick={saveTask} className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-600/20 uppercase text-xs tracking-widest">Uložit změny</button>
