@@ -37,7 +37,15 @@ import {
   Move,
   PanelLeft,
   PanelRight,
-  PanelBottom
+  PanelBottom,
+  Upload,
+  X,
+  Eye,
+  FileCheck,
+  MapPin,
+  Layers,
+  Search,
+  Navigation
 } from 'lucide-react';
 
 export const COLORS = {
@@ -67,6 +75,7 @@ export const Icons = {
   WhatsApp: Phone, // Lucide doesn't have a specific WhatsApp icon in the basic set, using Phone as fallback or could use MessageSquare
   Message: MessageSquare,
   AspectRatio: Maximize,
+  Maximize: Maximize,
   ImageEdit: ImageIcon,
   Speaker: Volume2,
   StopCircle: StopCircle,
@@ -91,6 +100,14 @@ export const Icons = {
   Move: Move,
   PanelLeft: PanelLeft,
   PanelRight: PanelRight,
-  PanelBottom: PanelBottom
+  PanelBottom: PanelBottom,
+  Upload: Upload,
+  X: X,
+  Eye: Eye,
+  FileCheck: FileCheck,
+  MapPin: MapPin,
+  Layers: Layers,
+  Search: Search,
+  Navigation: Navigation
 };
 

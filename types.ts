@@ -27,6 +27,16 @@ export interface Worker {
   licenseInfo?: string;
 }
 
+export interface VehicleLocation {
+  lat: number;
+  lng: number;
+  address?: string;
+  updatedAt?: string;
+  speed?: number;
+  driverName?: string;
+  isOnline?: boolean;
+}
+
 export interface Vehicle {
   id: string;
   plate: string;
@@ -38,12 +48,15 @@ export interface Vehicle {
   vignetteExpiration?: string;
   insuranceInfo?: string;
   carImage?: string;
-  techCertImage?: string;
+  techCertImage?: string; // Přední strana TP
+  techCertBackImage?: string; // Zadní strana TP
   assistancePhone?: string;
   // Tire info
   tireSize?: string;
   tireType?: 'Summer' | 'Winter' | 'All-season';
   tireDepth?: string;
+  // Live GPS / Location
+  currentLocation?: VehicleLocation;
 }
 
 export interface MoveTask {

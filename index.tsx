@@ -4,10 +4,18 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AppProvider } from './AppContext';
 
+// Google Maps Platform Quota & Auth Error Listener
+(window as any).gm_authFailure = () => {
+  window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+};
+
 // Suppress benign WebSocket and AbortError messages from console
 const originalConsoleError = console.error;
 console.error = (...args) => {
   const msg = args.map(String).join(' ').toLowerCase();
+  if (msg.includes('overquotamaperror') || msg.includes('quotaexceedederror')) {
+    window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+  }
   if (
     msg.includes('aborted') ||
     msg.includes('the user aborted a request') ||

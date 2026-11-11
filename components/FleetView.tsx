@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { handleFirestoreError } from '../App';
 import { getVehicleStkStatus, formatCzechDays } from '../utils/stkUtils';
+import FleetMapView from './FleetMapView';
 
 interface FleetViewProps {
   workers: Worker[];
@@ -31,6 +32,15 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
   const [selectedVehicle, setSelectedVehicle] = useState<Partial<Vehicle> | null>(null);
   const [showWorkerModal, setShowWorkerModal] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<Partial<Worker> | null>(null);
+
+  // Fleet Map modal state
+  const [showFleetMap, setShowFleetMap] = useState(false);
+  const [selectedMapVehicleId, setSelectedMapVehicleId] = useState<string | null>(null);
+
+  const handleOpenLocationMap = (vehicleId?: string) => {
+    setSelectedMapVehicleId(vehicleId || null);
+    setShowFleetMap(true);
+  };
 
   const carImageRef = useRef<HTMLInputElement>(null);
   const techCertImageRef = useRef<HTMLInputElement>(null);
@@ -217,9 +227,22 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
 
   return (
     <div className="space-y-6">
-      <div className="bg-slate-900 p-1 rounded-2xl flex border border-white/10">
-        <button onClick={() => setActiveSubTab('workers')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeSubTab === 'workers' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/30 hover:text-white'}`}>Tým</button>
-        <button onClick={() => setActiveSubTab('vehicles')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeSubTab === 'vehicles' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/30 hover:text-white'}`}>AUTA</button>
+      <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+        <div className="bg-slate-900 p-1 rounded-2xl flex border border-white/10 flex-1">
+          <button onClick={() => setActiveSubTab('workers')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeSubTab === 'workers' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/30 hover:text-white'}`}>Tým ({workers.length})</button>
+          <button onClick={() => setActiveSubTab('vehicles')} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeSubTab === 'vehicles' ? 'bg-white text-slate-900 shadow-lg' : 'text-white/30 hover:text-white'}`}>AUTA ({vehicles.length})</button>
+        </div>
+        {activeSubTab === 'vehicles' && (
+          <button
+            type="button"
+            onClick={() => handleOpenLocationMap()}
+            className="py-3 px-4 bg-blue-600/15 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 rounded-2xl font-black text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md group shrink-0"
+            title="Otevřít mapu se všemi vozidly"
+          >
+            <Icons.MapPin className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span>Mapa celé flotily ({vehicles.length})</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -286,62 +309,84 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
             const stk = getVehicleStkStatus(v.stkExpiration);
             
             return (
-              <div key={v.id} onClick={() => handleOpenVehicle(v)} className="bg-slate-800 p-3 sm:p-4 rounded-[1.5rem] sm:rounded-3xl border border-white/5 flex items-center gap-3 sm:gap-4 hover:border-blue-500/50 cursor-pointer group transition-all active:scale-95 shadow-lg">
-                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center shrink-0 transition-all ${
-                  isReady 
-                    ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 group-hover:bg-blue-600/20' 
-                    : onTask 
-                      ? 'bg-orange-600/10 border-orange-500/20 text-orange-400 group-hover:bg-orange-600/20'
-                      : 'bg-red-600/10 border-red-500/20 text-red-400 group-hover:bg-red-600/20'
-                }`}>
-                  {v.carImage ? <img src={v.carImage} className="w-full h-full object-cover rounded-[10px] sm:rounded-xl" /> : <Icons.Truck className="w-5 h-5 sm:w-6 sm:h-6" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{v.model}</h4>
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase truncate">{v.plate}</p>
-                    {stk && stk.isExpiringSoon && (
-                      <span className={`inline-flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${
-                        stk.isExpired 
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              <div 
+                key={v.id} 
+                onClick={() => handleOpenVehicle(v)} 
+                className="bg-slate-800 p-3 sm:p-4 rounded-[1.5rem] sm:rounded-3xl border border-white/5 flex flex-col justify-between hover:border-blue-500/50 cursor-pointer group transition-all active:scale-[0.99] shadow-lg"
+              >
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center shrink-0 transition-all ${
+                    isReady 
+                      ? 'bg-blue-600/10 border-blue-500/20 text-blue-400 group-hover:bg-blue-600/20' 
+                      : onTask 
+                        ? 'bg-orange-600/10 border-orange-500/20 text-orange-400 group-hover:bg-orange-600/20'
+                        : 'bg-red-600/10 border-red-500/20 text-red-400 group-hover:bg-red-600/20'
+                  }`}>
+                    {v.carImage ? <img src={v.carImage} className="w-full h-full object-cover rounded-[10px] sm:rounded-xl" /> : <Icons.Truck className="w-5 h-5 sm:w-6 sm:h-6" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-black text-white tracking-tight leading-tight group-hover:text-blue-400 transition-colors uppercase text-xs sm:text-sm truncate">{v.model}</h4>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <p className="text-[9px] sm:text-[10px] text-white/50 font-black tracking-widest uppercase truncate">{v.plate}</p>
+                      {stk && stk.isExpiringSoon && (
+                        <span className={`inline-flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${
+                          stk.isExpired 
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}>
+                          <span>⚠️</span>
+                          <span>{stk.isExpired ? 'STK propadlá' : `STK za ${formatCzechDays(stk.daysRemaining)}`}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
+                        isReady 
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                          : onTask 
+                            ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
+                            : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
                       }`}>
-                        <span>⚠️</span>
-                        <span>{stk.isExpired ? 'STK propadlá' : `STK za ${formatCzechDays(stk.daysRemaining)}`}</span>
+                        {statusLabel}
                       </span>
+                      {onTask && (
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
+                          <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
+                        </div>
+                      )}
+                    </div>
+                    {canManageFleet && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteVehicle(v.id);
+                        }}
+                        className="p-2 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-xl transition-all"
+                        title="Vymazat vozidlo"
+                      >
+                        <Icons.Trash className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`text-[7px] sm:text-[8px] px-2 sm:px-3 py-0.5 sm:py-1 rounded-full font-black uppercase tracking-widest whitespace-nowrap ${
-                      isReady 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                        : onTask 
-                          ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20'
-                          : 'bg-red-600 text-white shadow-lg shadow-red-600/20'
-                    }`}>
-                      {statusLabel}
-                    </span>
-                    {onTask && (
-                      <div className="flex items-center gap-1">
-                        <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
-                        <span className="text-[8px] text-orange-400 font-bold uppercase">Aktivní</span>
-                      </div>
-                    )}
-                  </div>
-                  {canManageFleet && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteVehicle(v.id);
-                      }}
-                      className="p-2 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-xl transition-all"
-                      title="Vymazat vozidlo"
-                    >
-                      <Icons.Trash className="w-4 h-4" />
-                    </button>
-                  )}
+
+                {/* Location Action Button */}
+                <div className="mt-2.5 pt-2.5 border-t border-white/5 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenLocationMap(v.id);
+                    }}
+                    className="flex-1 py-2 px-3 bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white rounded-xl border border-blue-500/20 text-[9px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-sm group/loc"
+                    title="Otevřít mapu a zobrazit aktuální polohu tohoto vozidla"
+                  >
+                    <Icons.MapPin className="w-3.5 h-3.5 group-hover/loc:scale-110 transition-transform" />
+                    <span>Zobrazit aktuální polohu</span>
+                  </button>
                 </div>
               </div>
             );
@@ -570,8 +615,20 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
                 </div>
               </div>
               <input type="file" ref={carImageRef} hidden onChange={e => handleImage(e, 'car')} />
-              <input type="file" ref={techCertImageRef} hidden onChange={e => handleImage(e, 'tech')} />
-              <div className="flex gap-4 mt-4">
+                {selectedVehicle.id && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowVehicleModal(false);
+                      handleOpenLocationMap(selectedVehicle.id!);
+                    }}
+                    className="w-full py-3 px-4 bg-blue-600/15 hover:bg-blue-600 text-blue-400 hover:text-white rounded-2xl border border-blue-500/30 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
+                  >
+                    <Icons.MapPin className="w-4 h-4" />
+                    <span>Zobrazit aktuální polohu na mapě flotily</span>
+                  </button>
+                )}
+                <div className="flex gap-4 mt-2">
                 {selectedVehicle.id && canManageFleet && (
                   <button 
                     onClick={() => deleteVehicle(selectedVehicle.id!)} 
@@ -588,6 +645,18 @@ const FleetView: React.FC<FleetViewProps> = ({ workers, setWorkers, vehicles, se
             </div>
           </div>
         </div>
+      )}
+
+      {/* Fullscreen Fleet Map Modal */}
+      {showFleetMap && (
+        <FleetMapView
+          vehicles={vehicles}
+          tasks={tasks}
+          workers={workers}
+          selectedVehicleId={selectedMapVehicleId}
+          onClose={() => setShowFleetMap(false)}
+          showToast={showToast}
+        />
       )}
     </div>
   );

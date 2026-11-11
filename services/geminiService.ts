@@ -421,5 +421,103 @@ export const geminiService = {
       const errorMsg = handleAIError(error);
       return errorMsg || "";
     }
+  },
+
+  /**
+   * Extract Vehicle Technical Certificate Data (Front & Back photo)
+   */
+  async extractVehicleTechCert(frontImage?: string, backImage?: string): Promise<{
+    plate?: string;
+    model?: string;
+    vin?: string;
+    capacity?: string;
+    stkExpiration?: string;
+    tireSize?: string;
+    insuranceInfo?: string;
+    extractedFields?: string[];
+  }> {
+    // 1. Try server-side route
+    try {
+      const res = await fetch("/api/gemini/extract-tech-cert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frontImage, backImage }),
+      });
+
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload && payload.success && payload.data) {
+          return payload.data;
+        }
+      }
+    } catch (apiErr) {
+      console.warn("API /api/gemini/extract-tech-cert failed, trying direct SDK fallback...", apiErr);
+    }
+
+    // 2. Fallback using client-side SDK if available
+    try {
+      const parts: any[] = [];
+      const parseImg = (imgStr?: string) => {
+        if (!imgStr) return null;
+        const m = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+        return m ? { mimeType: m[1], data: m[2] } : { mimeType: "image/jpeg", data: imgStr };
+      };
+
+      const fp = parseImg(frontImage);
+      if (fp) {
+        parts.push({ inlineData: { data: fp.data, mimeType: fp.mimeType } });
+        parts.push({ text: "PŘEDNÍ strana technického průkazu vozidla." });
+      }
+
+      const bp = parseImg(backImage);
+      if (bp) {
+        parts.push({ inlineData: { data: bp.data, mimeType: bp.mimeType } });
+        parts.push({ text: "ZADNÍ strana technického průkazu vozidla." });
+      }
+
+      if (parts.length === 0) {
+        return {};
+      }
+
+      parts.push({
+        text: `Extrahuj údaje z technického průkazu vozidla do JSON formátu:
+        - plate: Registrační značka / SPZ
+        - model: Tovární značka a obchodní označení (např. Mercedes-Benz Sprinter 314 CDI)
+        - vin: 17místný VIN kód
+        - capacity: Objem nákladového prostoru (např. 14 m³)
+        - stkExpiration: Platnost STK (YYYY-MM-DD)
+        - tireSize: Rozměr pneumatik (např. 235/65 R16C)
+        - insuranceInfo: Pojišťovna`
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: { parts },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              plate: { type: Type.STRING },
+              model: { type: Type.STRING },
+              vin: { type: Type.STRING },
+              capacity: { type: Type.STRING },
+              stkExpiration: { type: Type.STRING },
+              tireSize: { type: Type.STRING },
+              insuranceInfo: { type: Type.STRING },
+              extractedFields: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            }
+          }
+        }
+      });
+
+      return JSON.parse(response.text || "{}");
+    } catch (fallbackError) {
+      handleAIError(fallbackError);
+      return {};
+    }
   }
 };

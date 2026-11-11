@@ -59,6 +59,14 @@ const LOGO_URL = "/logo.png";
 
 const App: React.FC = () => {
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [gmpQuotaExceeded, setGmpQuotaExceeded] = React.useState(false);
+
+  React.useEffect(() => {
+    const handler = () => setGmpQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', handler);
+    return () => window.removeEventListener('gmp-quota-exceeded', handler);
+  }, []);
+
   const [isDesktop, setIsDesktop] = React.useState(() => typeof window !== 'undefined' ? window.innerWidth >= 768 : false);
   const [isDraggingNav, setIsDraggingNav] = React.useState(false);
   const navRef = React.useRef<HTMLElement | null>(null);
@@ -379,6 +387,22 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <div className="min-h-screen bg-[#0f172a] flex flex-col w-full md:max-w-[1920px] mx-auto shadow-2xl overflow-hidden relative border-x border-white/10">
       <header className="bg-slate-900/90 backdrop-blur-xl border-b border-white/10 p-5 md:p-8 sticky top-0 z-40 flex items-center justify-between h-[80px] md:h-[100px]">
+        {gmpQuotaExceeded && (
+          <div className="absolute top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm flex items-center justify-center gap-1.5 font-sans">
+            <span>
+              Google Maps Platform quota reached. If you are the app owner, visit{' '}
+              <a
+                href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline font-semibold text-amber-950 hover:text-amber-800"
+              >
+                maps developer site
+              </a>{' '}
+              for instructions to update your account.
+            </span>
+          </div>
+        )}
         {quotaExceeded && (
           <div className="absolute top-0 left-0 right-0 bg-red-600 text-white text-[10px] font-black py-2 text-center animate-pulse z-50 shadow-lg flex items-center justify-center gap-2">
             <Icons.AlertTriangle className="w-3 h-3" />
